@@ -1,4 +1,5 @@
 from enum import Enum
+from typing import Any
 
 import gymnasium as gym
 import numpy as np
@@ -95,7 +96,7 @@ class HPEnv(gym.Env):
 
 
     def observe(self):
-        observation = np.ones(shape=(self.seq_len - 2,), dtype=np.uint8) * 4
+        observation = np.ones(shape=(self.seq_len - 2,), dtype=np.uint8) * 3
 
         for i, action in enumerate(self.actions):
             observation[i] = action.value
