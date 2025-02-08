@@ -1,4 +1,4 @@
-from enum import Enum
+from enum import Enum #used to define an enumeration for possible actions.
 from typing import Any
 
 import gymnasium as gym
@@ -29,6 +29,7 @@ class HPEnv(gym.Env):
         self.action_space = spaces.Discrete(3)
         # The observation space is the series of actions taken
         # 0 = Left, 1 = Forward, 2 = Right, 3 = No action,
+        #creates a shape length sapce with the lowest action is 0 and higher is 3 ->stores the sequence of actions the agent has taken so far.
         self.observation_space = spaces.Box(low=0, high=3, shape=(self.seq_len - 2,), dtype=np.uint8)
 
         # Whether the first left turn left has been taken
@@ -49,13 +50,13 @@ class HPEnv(gym.Env):
         prev_prev_pos = self.state[-2]
         direction_order = [(0, 1), (1, 0), (0, -1), (-1, 0)] # up, right, down, left
         cur_direction = (prev_pos[0] - prev_prev_pos[0], prev_pos[1] - prev_prev_pos[1])
-        cur_direction_idx = direction_order.index(cur_direction)
+        cur_direction_idx = direction_order.index(cur_direction) #getprevious direction
         if action == Action.LEFT.value:
             cur_direction_idx = (cur_direction_idx - 1) % 4  # Turn left 
         elif action == Action.RIGHT.value:
             cur_direction_idx = (cur_direction_idx + 1) % 4  # Turn right
         direction = direction_order[cur_direction_idx]
-        new_pos = (prev_pos[0] + direction[0], prev_pos[1] + direction[1])
+        new_pos = (prev_pos[0] + direction[0], prev_pos[1] + direction[1]) #Computes the next position based on the new direction
 
         observation = self.observe()
 
@@ -67,7 +68,7 @@ class HPEnv(gym.Env):
         self.state.append(new_pos)
 
         self.terminated = len(self.state) == self.seq_len
-        self.truncated = False # Always False
+        self.truncated = False # Always False -- episodes never end early due to time limits.
         reward = self._compute_reward()
         info = {
             'chain_length' : len(self.state),
@@ -96,6 +97,7 @@ class HPEnv(gym.Env):
 
 
     def observe(self):
+        #Updates the array with actual actions taken by the agent
         observation = np.ones(shape=(self.seq_len - 2,), dtype=np.uint8) * 3
 
         for i, action in enumerate(self.actions):
