@@ -36,8 +36,7 @@ class HPEnv(gym.Env):
         # False after environment reset
         self.first_turn_left = False
 
-    def step(self, action): 
-        
+    def step(self, action):
         if not self.action_space.contains(action):
             raise ValueError("%r (%s) invalid" % (action, type(action)))
 
@@ -104,7 +103,7 @@ class HPEnv(gym.Env):
         for i, action in enumerate(self.actions):
             observation[i] = action
 
-        return observation.astype(np.float32)
+        return observation
 
     def reset(self, seed: int | None = None, options: dict[str, Any] | None = None):
         self.actions = []
