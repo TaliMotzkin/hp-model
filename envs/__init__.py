@@ -1,6 +1,7 @@
 from gymnasium.envs.registration import register
+from .hp_env import *
 
 register(
-    id="HPEnv-v0",  # Unique ID
-    entry_point="envs.hp-env:HPEnv",  # Path to class
+    id="HPEnv_v0",  # Unique ID
+    entry_point="envs.hp_env:HPEnv",  # Path to class
 )

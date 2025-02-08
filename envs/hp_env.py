@@ -51,20 +51,20 @@ class HPEnv(gym.Env):
         cur_direction = (prev_pos[0] - prev_prev_pos[0], prev_pos[1] - prev_prev_pos[1])
         cur_direction_idx = direction_order.index(cur_direction)
         if action == Action.LEFT.value:
-            current_direction_index = (cur_direction_idx - 1) % 4  # Turn left 
+            cur_direction_idx = (cur_direction_idx - 1) % 4  # Turn left 
         elif action == Action.RIGHT.value:
-            current_direction_index = (cur_direction_idx + 1) % 4  # Turn right
+            cur_direction_idx = (cur_direction_idx + 1) % 4  # Turn right
         direction = direction_order[cur_direction_idx]
         new_pos = (prev_pos[0] + direction[0], prev_pos[1] + direction[1])
-
-        self.actions.append(action)
-        self.state.append(new_pos)
 
         observation = self.observe()
 
         # Detects for collision
         if new_pos in self.state:
-            return (observation, 0, True, {})
+            return (observation, 0, True, False, {})
+
+        self.actions.append(action)
+        self.state.append(new_pos)
 
         self.terminated = len(self.state) == self.seq_len
         self.truncated = False # Always False
@@ -73,7 +73,7 @@ class HPEnv(gym.Env):
             'chain_length' : len(self.state),
             'seq_length'   : self.seq_len,
             'actions'      : self.actions,
-            'state_chain'  : self.state,
+            'state'  : self.state,
             'first_turn_left': self.first_turn_left,
         }
 
@@ -99,7 +99,7 @@ class HPEnv(gym.Env):
         observation = np.ones(shape=(self.seq_len - 2,), dtype=np.uint8) * 3
 
         for i, action in enumerate(self.actions):
-            observation[i] = action.value
+            observation[i] = action
 
         return observation
 
