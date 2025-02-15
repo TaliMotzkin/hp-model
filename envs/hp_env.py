@@ -1,9 +1,9 @@
 from enum import Enum #used to define an enumeration for possible actions.
-from typing import Any
 
 import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
+from typing import Optional, Dict, Any
 
 
 class Action(Enum):
@@ -106,7 +106,7 @@ class HPEnv(gym.Env):
 
         return observation.astype(np.float32)
 
-    def reset(self, seed: int | None = None, options: dict[str, Any] | None = None):
+    def reset(self, seed: Optional[int] = None, options: Optional[Dict[str, Any]] = None):
         self.actions = []
         self.prev_reward = 0
         self.state = [ (0, 0), (0, 1) ]
