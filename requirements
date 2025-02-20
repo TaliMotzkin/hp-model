@@ -5,3 +5,4 @@ skrl [torch]
 gymnasium
 scikit-learn
 matplotlib
+einops
