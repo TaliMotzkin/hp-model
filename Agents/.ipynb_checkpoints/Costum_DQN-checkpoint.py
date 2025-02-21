@@ -63,7 +63,18 @@ class DQNAgent:
         rewards = rewards.unsqueeze(1).to(self.device)
         dones = dones.unsqueeze(1).to(self.device)
 
+        # states = torch.tensor(np.array(states), dtype=torch.float32).to(self.device)
+        # actions = torch.tensor(np.array(actions), dtype=torch.long).unsqueeze(1).to(self.device)
+        # rewards = torch.tensor(np.array(rewards), dtype=torch.float32).unsqueeze(1).to(self.device)
+        # next_states = torch.tensor(np.array(next_states), dtype=torch.float32).to(self.device)
+        # dones = torch.tensor(np.array(dones), dtype=torch.float32).unsqueeze(1).to(self.device)
 
+        # Compute current Q-values
+        # if states.dim() == 2:  # If shape is (batch_size, seq_length)
+        #     states = states.unsqueeze(-1)  # Convert to (batch_size, seq_length, 1)
+        # if next_states.dim() == 2:
+        #     next_states = next_states.unsqueeze(-1)
+        # print(f"states shape before forward pass: {states.shape}")
         q_values = self.q_network(states).gather(1, actions)
 
         # Compute target Q-values
@@ -91,4 +102,5 @@ class DQNAgent:
     def update_target_network(self):
         """Copy parameters from Q-network to target network"""
         self.target_network.load_state_dict(self.q_network.state_dict())
+        # Detach hidden state to prevent backward graph issues
 

@@ -1,9 +1,9 @@
 from enum import Enum #used to define an enumeration for possible actions.
-from typing import Any
 
 import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
+from typing import Optional, Dict, Any
 
 
 class Action(Enum):
@@ -30,13 +30,15 @@ class HPEnv(gym.Env):
         # The observation space is the series of actions taken
         # 0 = Left, 1 = Forward, 2 = Right, 3 = No action,
         #creates a shape length sapce with the lowest action is 0 and higher is 3 ->stores the sequence of actions the agent has taken so far.
-        self.observation_space = spaces.Box(low=0, high=3, shape=(self.seq_len - 2,), dtype=np.float32)
+        # self.observation_space = spaces.Box(low=0, high=3, shape=(self.seq_len - 2,), dtype=np.uint8)
+        self.observation_space = spaces.Box(low=0.0, high=1.0, shape=(self.seq_len - 2, 1), dtype=np.float32)
 
         # Whether the first left turn left has been taken
         # False after environment reset
         self.first_turn_left = False
 
-    def step(self, action):
+    def step(self, action): 
+        
         if not self.action_space.contains(action):
             raise ValueError("%r (%s) invalid" % (action, type(action)))
 
@@ -98,14 +100,16 @@ class HPEnv(gym.Env):
 
     def observe(self):
         #Updates the array with actual actions taken by the agent
-        observation = np.ones(shape=(self.seq_len - 2,), dtype=np.uint8) * 3
+        observation = np.ones(shape=(self.seq_len - 2,), dtype=np.float32)
 
         for i, action in enumerate(self.actions):
-            observation[i] = action
+            observation[i] = action / 3.0
 
+        # return observation.astype(np.float32)
+        # print(observation)
         return observation
 
-    def reset(self, seed: int | None = None, options: dict[str, Any] | None = None):
+    def reset(self, seed: Optional[int] = None, options: Optional[Dict[str, Any]] = None):
         self.actions = []
         self.prev_reward = 0
         self.state = [ (0, 0), (0, 1) ]
