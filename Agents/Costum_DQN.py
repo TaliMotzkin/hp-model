@@ -5,6 +5,7 @@ import torch.optim as optim
 from models.LASTM_costum import LSTMDQN
 import torch
 
+
 class DQNAgent:
     def __init__(self, env, hidden_dim=128, gamma=0.99, lr=1e-3, batch_size=64, buffer_capacity=500, seed=0):
         self.env = env
@@ -20,24 +21,27 @@ class DQNAgent:
         self.env.action_space.seed(seed)
 
         # input_dim = env.observation_space.shape[0]  #length
-        input_dim = 1  #length
+        input_dim = 1  # length
         output_dim = env.action_space.n  # of actions
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        self.q_network = LSTMDQN(input_dim, hidden_dim, output_dim)
-        self.target_network = LSTMDQN(input_dim, hidden_dim, output_dim)
+        self.q_network = LSTMDQN(input_dim, hidden_dim, output_dim).to(self.device)
+        self.target_network = LSTMDQN(input_dim, hidden_dim, output_dim).to(self.device)
         # self.target_network.load_state_dict(self.q_network.state_dict())  # init target network
         self.update_target_network()
 
         self.optimizer = optim.Adam(self.q_network.parameters(), lr=lr)
-        self.buffer = ReplayBuffer(buffer_capacity)
+        self.buffer = ReplayBuffer(buffer_capacity, self.device)
 
     def select_action_1(self, state):
         """Select an action using epsilon-greedy"""
         np.random.seed(self.seed)
         if np.random.rand() < self.epsilon:
             return self.env.action_space.sample()
-        state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0).unsqueeze(-1).to(self.device)   # Add batch dimension
+        if isinstance(state, torch.Tensor):
+            state_tensor = state.clone().detach().unsqueeze(0).unsqueeze(-1).to(self.device)
+        else:
+            state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0).unsqueeze(-1).to(self.device)
         with torch.no_grad():
             # print("state_tensor", state_tensor.shape)
             q_values = self.q_network(state_tensor)
@@ -50,20 +54,27 @@ class DQNAgent:
             return
 
         batch = self.buffer.sample(self.batch_size)
-        states, actions, rewards, next_states, dones = zip(*batch)
+        # print(f"Batch type: {type(batch)}")  # Should be a tuple
+        # print(f"Batch length: {len(batch)}")  # Should be 5
+        # print(f"Batch content example: {batch[2:]}")  # Print first few sample
+        states, actions, rewards, next_states, dones = batch
 
-        states = torch.tensor(np.array(states), dtype=torch.float32).to(self.device)
-        actions = torch.tensor(np.array(actions), dtype=torch.long).unsqueeze(1).to(self.device)
-        rewards = torch.tensor(np.array(rewards), dtype=torch.float32).unsqueeze(1).to(self.device)
-        next_states = torch.tensor(np.array(next_states), dtype=torch.float32).to(self.device)
-        dones = torch.tensor(np.array(dones), dtype=torch.float32).unsqueeze(1).to(self.device)
+        actions = actions.unsqueeze(1).to(self.device)
+        rewards = rewards.unsqueeze(1).to(self.device)
+        dones = dones.unsqueeze(1).to(self.device)
+
+        # states = torch.tensor(np.array(states), dtype=torch.float32).to(self.device)
+        # actions = torch.tensor(np.array(actions), dtype=torch.long).unsqueeze(1).to(self.device)
+        # rewards = torch.tensor(np.array(rewards), dtype=torch.float32).unsqueeze(1).to(self.device)
+        # next_states = torch.tensor(np.array(next_states), dtype=torch.float32).to(self.device)
+        # dones = torch.tensor(np.array(dones), dtype=torch.float32).unsqueeze(1).to(self.device)
 
         # Compute current Q-values
         # if states.dim() == 2:  # If shape is (batch_size, seq_length)
         #     states = states.unsqueeze(-1)  # Convert to (batch_size, seq_length, 1)
         # if next_states.dim() == 2:
         #     next_states = next_states.unsqueeze(-1)
-        # print("states", states)
+        # print(f"states shape before forward pass: {states.shape}")
         q_values = self.q_network(states).gather(1, actions)
 
         # Compute target Q-values
