@@ -100,12 +100,13 @@ class HPEnv(gym.Env):
 
     def observe(self):
         #Updates the array with actual actions taken by the agent
-        observation = np.ones(shape=(self.seq_len - 2,), dtype=np.uint8) * 3
+        observation = np.ones(shape=(self.seq_len - 2,), dtype=np.float32)
 
         for i, action in enumerate(self.actions):
-            observation[i] = action/3
+            observation[i] = action / 3.0
 
         # return observation.astype(np.float32)
+        # print(observation)
         return observation
 
     def reset(self, seed: Optional[int] = None, options: Optional[Dict[str, Any]] = None):

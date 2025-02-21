@@ -2,10 +2,12 @@ import random
 import numpy as np
 
 class ReplayBuffer:
-    def __init__(self, capacity):
+    def __init__(self, capacity,  seed=0):
         self.capacity = capacity
         self.buffer = []
         self.position = 0
+        self.seed = seed
+        random.seed(seed)
 
     def push(self, state, action, reward, next_state, done):
         """Store experience in buffer"""
@@ -22,6 +24,7 @@ class ReplayBuffer:
 
     def sample(self, batch_size):
         """Randomly sample a batch of experiences"""
+        random.seed(self.seed)
         return random.sample(self.buffer, batch_size)
 
     def __len__(self):
