@@ -6,13 +6,15 @@ from models.LASTM_costum import LSTMDQN
 import torch
 
 class DQNAgent:
-    def __init__(self, env, hidden_dim=128, gamma=0.99, lr=1e-3, batch_size=64, buffer_capacity=500, seed=0):
+    def __init__(self, env, hidden_dim=512, gamma=0.98, lr=0.0005, batch_size=32, buffer_capacity=5000, seed=0):
         self.env = env
         self.gamma = gamma
         self.batch_size = batch_size
         self.epsilon = 1.0
-        self.epsilon_min = 0.05
+        self.epsilon_min = 0.01
         self.epsilon_decay = 0.995
+        self.epsilon_max = 1
+        self.decay_rate = 5
         self.seed = seed
         np.random.seed(seed)
         torch.manual_seed(seed)
@@ -63,18 +65,7 @@ class DQNAgent:
         rewards = rewards.unsqueeze(1).to(self.device)
         dones = dones.unsqueeze(1).to(self.device)
 
-        # states = torch.tensor(np.array(states), dtype=torch.float32).to(self.device)
-        # actions = torch.tensor(np.array(actions), dtype=torch.long).unsqueeze(1).to(self.device)
-        # rewards = torch.tensor(np.array(rewards), dtype=torch.float32).unsqueeze(1).to(self.device)
-        # next_states = torch.tensor(np.array(next_states), dtype=torch.float32).to(self.device)
-        # dones = torch.tensor(np.array(dones), dtype=torch.float32).unsqueeze(1).to(self.device)
 
-        # Compute current Q-values
-        # if states.dim() == 2:  # If shape is (batch_size, seq_length)
-        #     states = states.unsqueeze(-1)  # Convert to (batch_size, seq_length, 1)
-        # if next_states.dim() == 2:
-        #     next_states = next_states.unsqueeze(-1)
-        # print(f"states shape before forward pass: {states.shape}")
         q_values = self.q_network(states).gather(1, actions)
 
         # Compute target Q-values
@@ -83,9 +74,13 @@ class DQNAgent:
             target_q_values = rewards + (1 - dones) * self.gamma * next_q_values
 
         bellman_error = target_q_values - q_values
-
+        
         clipped_bellman_error = bellman_error.clamp(-1, 1)
         d_error = clipped_bellman_error * -1.0
+
+        loss_value = F.smooth_l1_loss(q_values, target_q_values)
+        
+    
         self.optimizer.zero_grad()
         q_values.backward(d_error.data)
 
@@ -98,9 +93,10 @@ class DQNAgent:
         # loss.backward()
         # torch.nn.utils.clip_grad_norm_(self.q_network.parameters(), max_norm=1.0) 
         # self.optimizer.step()
+        loss_value = F.smooth_l1_loss(q_values, target_q_values)
+        return loss_value.item()
 
     def update_target_network(self):
         """Copy parameters from Q-network to target network"""
         self.target_network.load_state_dict(self.q_network.state_dict())
-        # Detach hidden state to prevent backward graph issues
 

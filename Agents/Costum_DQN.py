@@ -6,13 +6,15 @@ from models.LASTM_costum import LSTMDQN
 import torch
 
 class DQNAgent:
-    def __init__(self, env, hidden_dim=128, gamma=0.99, lr=1e-3, batch_size=64, buffer_capacity=500, seed=0):
+    def __init__(self, env, hidden_dim=512, gamma=0.98, lr=0.0005, batch_size=32, buffer_capacity=5000, seed=0):
         self.env = env
         self.gamma = gamma
         self.batch_size = batch_size
         self.epsilon = 1.0
-        self.epsilon_min = 0.05
+        self.epsilon_min = 0.01
         self.epsilon_decay = 0.995
+        self.epsilon_max = 1
+        self.decay_rate = 5
         self.seed = seed
         np.random.seed(seed)
         torch.manual_seed(seed)
@@ -72,9 +74,13 @@ class DQNAgent:
             target_q_values = rewards + (1 - dones) * self.gamma * next_q_values
 
         bellman_error = target_q_values - q_values
-
+        
         clipped_bellman_error = bellman_error.clamp(-1, 1)
         d_error = clipped_bellman_error * -1.0
+
+        loss_value = F.smooth_l1_loss(q_values, target_q_values)
+        
+    
         self.optimizer.zero_grad()
         q_values.backward(d_error.data)
 
@@ -87,6 +93,8 @@ class DQNAgent:
         # loss.backward()
         # torch.nn.utils.clip_grad_norm_(self.q_network.parameters(), max_norm=1.0) 
         # self.optimizer.step()
+        loss_value = F.smooth_l1_loss(q_values, target_q_values)
+        return loss_value.item()
 
     def update_target_network(self):
         """Copy parameters from Q-network to target network"""
