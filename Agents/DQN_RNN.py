@@ -167,6 +167,7 @@ class CUSTOM(Agent):
     def init(self, trainer_cfg: Optional[Mapping[str, Any]] = None) -> None:
         """Initialize the agent"""
         super().init(trainer_cfg=trainer_cfg)
+        self.set_mode("eval")
 
         # create tensors in memory
         if self.memory is not None:
@@ -216,9 +217,9 @@ class CUSTOM(Agent):
 
         rnn = {"rnn": self._rnn_initial_states["q_network"]} if self._rnn else {} #intialize rnn
 
-
-
+        print("rnn act ",rnn)
         if not self._exploration_timesteps:#decay period for exploration strategy
+            print("rtuen by exploration timesteps")
             values, _, outputs =self.q_network.act({"states": self._state_preprocessor(states), **rnn}, role="q_network")
             actions = torch.argmax(values,dim=1, keepdim=True)
             #todo check whether we need to do argmax over outputs?
@@ -231,23 +232,32 @@ class CUSTOM(Agent):
             )
 
         # sample random actions
-        actions, _, outputs = self.q_network.random_act({"states": self._state_preprocessor(states), **rnn}, role="q_network")
-        if timestep < self._random_timesteps:
-            return actions, None, outputs
+        # actions, _, outputs = self.q_network.random_act({"states": self._state_preprocessor(states), **rnn}, role="q_network")
+        #
+        # if timestep < self._random_timesteps:
+        #     print("rtuen by  timesteps")
+        #     return actions, None, outputs
 
 
-
+        # print("actions random ", actions)
         # sample actions with epsilon-greedy policy
         epsilon = self._exploration_final_epsilon + (
                 self._exploration_initial_epsilon - self._exploration_final_epsilon
         ) * math.exp(-1.0 * timestep / self._exploration_timesteps)
 
         indexes = (torch.rand(states.shape[0], device=self.device) >= epsilon).nonzero().view(-1)
-        if indexes.numel():
-            with torch.autocast(device_type=self._device_type, enabled=self._mixed_precision):
-                values,  _, outputs = self.q_network.act({"states": states[indexes], **rnn}, role="q_network")
-                actions[indexes] = torch.argmax(values, dim=1, keepdim=True)
+        print("indexes.numel()", indexes.numel(), indexes)
 
+        with torch.autocast(device_type=self._device_type, enabled=self._mixed_precision):
+            values, _, outputs = self.q_network.act({"states": states[indexes], **rnn}, role="q_network")
+        if indexes.numel():
+                actions = torch.empty(states.shape[0], device=self.device)
+                actions[indexes] = torch.argmax(values, dim=1, keepdim=True)
+                print("actions ",actions)
+        else:
+            num_actions = self.q_network.action_space.n  # Assuming a discrete action space with 'n' possible actions
+            actions = torch.randint(low=0, high=num_actions, size=(states.shape[0],), device=self.device)
+            print("Random actions", actions)
 
         if self._rnn:
             self._rnn_final_states["q_network"] = outputs.get("rnn", [])
@@ -255,6 +265,7 @@ class CUSTOM(Agent):
         # record epsilon
         self.track_data("Exploration / Exploration epsilon", epsilon)
 
+        print("rtuen normal")
         return actions, None, outputs
 
     def record_transition(

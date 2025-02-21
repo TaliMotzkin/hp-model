@@ -30,7 +30,8 @@ class HPEnv(gym.Env):
         # The observation space is the series of actions taken
         # 0 = Left, 1 = Forward, 2 = Right, 3 = No action,
         #creates a shape length sapce with the lowest action is 0 and higher is 3 ->stores the sequence of actions the agent has taken so far.
-        self.observation_space = spaces.Box(low=0, high=3, shape=(self.seq_len - 2,), dtype=np.float32)
+        # self.observation_space = spaces.Box(low=0, high=3, shape=(self.seq_len - 2,), dtype=np.uint8)
+        self.observation_space = spaces.Box(low=0.0, high=1.0, shape=(self.seq_len - 2, 1), dtype=np.float32)
 
         # Whether the first left turn left has been taken
         # False after environment reset
@@ -102,9 +103,10 @@ class HPEnv(gym.Env):
         observation = np.ones(shape=(self.seq_len - 2,), dtype=np.uint8) * 3
 
         for i, action in enumerate(self.actions):
-            observation[i] = action
+            observation[i] = action/3
 
-        return observation.astype(np.float32)
+        # return observation.astype(np.float32)
+        return observation
 
     def reset(self, seed: Optional[int] = None, options: Optional[Dict[str, Any]] = None):
         self.actions = []
