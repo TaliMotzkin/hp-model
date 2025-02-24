@@ -19,6 +19,14 @@ class HPEnv(gym.Env):
         self.seq_len = len(self.seq)
         self.actions = []
 
+        observation_sequence = []
+        for character in self.seq:
+            if character == 'H':
+                observation_sequence.append(0)
+            elif character == 'P':
+                observation_sequence.append(1)
+        self.observation_sequence = np.array(observation_sequence, dtype=np.uint8)
+
         self.reset()
 
         if len(self.seq) <= 2:
@@ -29,7 +37,8 @@ class HPEnv(gym.Env):
         self.action_space = spaces.Discrete(3)
         # The observation space is the series of actions taken
         # 0 = Left, 1 = Forward, 2 = Right, 3 = No action,
-        self.observation_space = spaces.Box(low=0, high=3, shape=(self.seq_len - 2,), dtype=np.uint8)
+        self.observation_space = spaces.Tuple((spaces.Box(low=0, high=3, shape=(self.seq_len,), dtype=np.uint8),
+                                               spaces.Box(low=0, high=1, shape=(self.seq_len,), dtype=np.uint8)))
 
         # Whether the first left turn left has been taken
         # False after environment reset
@@ -96,12 +105,12 @@ class HPEnv(gym.Env):
 
 
     def observe(self):
-        observation = np.ones(shape=(self.seq_len - 2,), dtype=np.uint8) * 3
+        observation_actions = np.ones(shape=(self.seq_len,), dtype=np.uint8) * 3
 
         for i, action in enumerate(self.actions):
-            observation[i] = action
+            observation_actions[i + 2] = action
 
-        return observation
+        return (observation_actions, self.observation_sequence)
 
     def reset(self, seed: int | None = None, options: dict[str, Any] | None = None):
         self.actions = []
