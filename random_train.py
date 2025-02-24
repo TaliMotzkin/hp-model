@@ -16,8 +16,6 @@ set_seed(42)  # e.g. `set_seed(42)` for fixed seed
 
 # load and wrap the gymnasium environment.
 # note: the environment version may change depending on the gymnasium version
-# seq = "HHHPHPHHPPP"
-# seq = "PPHPPHHPPHHPPPPPHHHHHHHHHHPPPPPPHHPPHHPPHPPHHHHH"
 seq = "PPPHHPPHHPPPPPHHHHHHHPPHHPPPPHHPPHPP"
 env = gym.make("HPEnv_v0", seq=seq)
 env = wrap_env(env)
@@ -35,10 +33,12 @@ memory = RandomMemory(memory_size=50000, num_envs=env.num_envs, device=device, r
 models = {}
 models["q_network"] = MLPQNetwork(observation_space=env.observation_space,
                                   action_space=env.action_space,
-                                  device=device)
+                                  device=device,
+                                  d_model=4)
 models["target_q_network"] = MLPQNetwork(observation_space=env.observation_space,
                                          action_space=env.action_space,
-                                         device=device)
+                                         device=device,
+                                         d_model=4)
 
 # initialize models' lazy modules
 for role, model in models.items():
@@ -53,13 +53,14 @@ for model in models.values():
 # https://skrl.readthedocs.io/en/latest/api/agents/dqn.html#configuration-and-hyperparameters
 cfg = DQN_DEFAULT_CONFIG.copy()
 cfg["batch_size"] = 200
+cfg["discount_factor"] = 1.
 cfg["learning_starts"] = 100
-cfg["exploration"]["final_epsilon"] = 0.01
-cfg["exploration"]["timesteps"] = 15000
+cfg["exploration"]["final_epsilon"] = 1.
+cfg["exploration"]["timesteps"] = 50000
 # logging to TensorBoard and write checkpoints (in timesteps)
 cfg["experiment"]["write_interval"] = 1000
 cfg["experiment"]["checkpoint_interval"] = 5000
-cfg["experiment"]["directory"] = "runs/mlp_36_mer"
+cfg["experiment"]["directory"] = "runs/random_36_mer"
 
 agent = DQN(models=models,
             memory=memory,
