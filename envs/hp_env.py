@@ -89,6 +89,9 @@ class HPEnv(gym.Env):
         return (observation, reward, self.terminated, self.truncated, info)
 
     def _compute_reward(self) -> float:
+        # No reward if the entire sequence hasn't been laid out
+        if (len(self.actions) + 2) < len(self.seq):
+            return 0.
         # The reward is the number of H-H non-sequential contacts
         num_contacts = 0.
         h_positions = {pos for idx, pos in enumerate(self.state) if self.seq[idx] == 'H'}
