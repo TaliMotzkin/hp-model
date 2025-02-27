@@ -16,7 +16,8 @@ set_seed(42)  # e.g. `set_seed(42)` for fixed seed
 
 # load and wrap the gymnasium environment.
 # note: the environment version may change depending on the gymnasium version
-seq = "PPPHHPPHHPPPPPHHHHHHHPPHHPPPPHHPPHPP"
+# seq = "PPPHHPPHHPPPPPHHHHHHHPPHHPPPPHHPPHPP"
+seq = "PPHPPHHPPHHPPPPPHHHHHHHHHHPPPPPPHHPPHHPPHPPHHHHH"
 env = gym.make("HPEnv_v0", seq=seq)
 env = wrap_env(env)
 
@@ -60,7 +61,7 @@ cfg["exploration"]["timesteps"] = 50000
 # logging to TensorBoard and write checkpoints (in timesteps)
 cfg["experiment"]["write_interval"] = 1000
 cfg["experiment"]["checkpoint_interval"] = 5000
-cfg["experiment"]["directory"] = "runs/random_36_mer"
+cfg["experiment"]["directory"] = "runs/random_48_mer"
 
 agent = DQN(models=models,
             memory=memory,
