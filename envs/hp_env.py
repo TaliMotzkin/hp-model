@@ -4,6 +4,7 @@ from typing import Any
 import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
+from sklearn.metrics.pairwise import euclidean_distances
 
 
 class Action(Enum):
@@ -54,17 +55,21 @@ class HPEnv(gym.Env):
                 action = 0
             self.first_turn_left = True
 
-        prev_pos = self.state[-1]
-        prev_prev_pos = self.state[-2]
-        direction_order = [(0, 1), (1, 0), (0, -1), (-1, 0)] # up, right, down, left
-        cur_direction = (prev_pos[0] - prev_prev_pos[0], prev_pos[1] - prev_prev_pos[1])
-        cur_direction_idx = direction_order.index(cur_direction)
-        if action == Action.LEFT.value:
-            cur_direction_idx = (cur_direction_idx - 1) % 4  # Turn left 
-        elif action == Action.RIGHT.value:
-            cur_direction_idx = (cur_direction_idx + 1) % 4  # Turn right
-        direction = direction_order[cur_direction_idx]
-        new_pos = (prev_pos[0] + direction[0], prev_pos[1] + direction[1])
+        def get_new_pos(action):
+            prev_pos = self.state[-1]
+            prev_prev_pos = self.state[-2]
+            direction_order = [(0, 1), (1, 0), (0, -1), (-1, 0)] # up, right, down, left
+            cur_direction = (prev_pos[0] - prev_prev_pos[0], prev_pos[1] - prev_prev_pos[1])
+            cur_direction_idx = direction_order.index(cur_direction)
+            if action == Action.LEFT.value:
+                cur_direction_idx = (cur_direction_idx - 1) % 4  # Turn left 
+            elif action == Action.RIGHT.value:
+                cur_direction_idx = (cur_direction_idx + 1) % 4  # Turn right
+            direction = direction_order[cur_direction_idx]
+            new_pos = (prev_pos[0] + direction[0], prev_pos[1] + direction[1])
+            return new_pos
+
+        new_pos = get_new_pos(action)
 
         observation = self.observe()
 
@@ -75,23 +80,35 @@ class HPEnv(gym.Env):
         self.actions.append(action)
         self.state.append(new_pos)
 
-        self.terminated = len(self.state) == self.seq_len
         self.truncated = False # Always False
+
+        # Detects for being trapped
+        is_free = False
+        for next_action in (0, 1, 2):
+            next_pos = get_new_pos(next_action)
+            if next_pos not in self.state:
+                is_free = True
+        is_trapped = not is_free
+
+        self.terminated = is_trapped
+        self.truncated = len(self.state) == self.seq_len
+
         reward = self._compute_reward()
+        # No reward if the entire sequence hasn't been laid out and isn't trapped
+        if (len(self.actions) + 2) < len(self.seq) and is_free:
+            reward = 0.
         info = {
-            'chain_length' : len(self.state),
-            'seq_length'   : self.seq_len,
-            'actions'      : self.actions,
-            'state'  : self.state,
+            'chain_length'   : len(self.state),
+            'seq_length'     : self.seq_len,
+            'actions'        : self.actions,
+            'state'          : self.state,
             'first_turn_left': self.first_turn_left,
+            'is_trapped'     : is_trapped,
         }
 
         return (observation, reward, self.terminated, self.truncated, info)
 
     def _compute_reward(self) -> float:
-        # No reward if the entire sequence hasn't been laid out
-        if (len(self.actions) + 2) < len(self.seq):
-            return 0.
         # The reward is the number of H-H non-sequential contacts
         num_contacts = 0.
         h_positions = {pos for idx, pos in enumerate(self.state) if self.seq[idx] == 'H'}

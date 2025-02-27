@@ -26,7 +26,7 @@ device = env.device
 
 
 # instantiate a memory as experience replay
-memory = RandomMemory(memory_size=50000, num_envs=env.num_envs, device=device, replacement=False)
+memory = RandomMemory(memory_size=50000, num_envs=env.num_envs, device=device)
 
 
 # instantiate the agent's models (function approximators) using the model instantiator utility.
@@ -53,13 +53,13 @@ for model in models.values():
 # https://skrl.readthedocs.io/en/latest/api/agents/dqn.html#configuration-and-hyperparameters
 cfg = DQN_DEFAULT_CONFIG.copy()
 cfg["batch_size"] = 200
-cfg["learning_starts"] = 100
+cfg["learning_starts"] = 5000
 cfg["exploration"]["final_epsilon"] = 0.01
 cfg["exploration"]["timesteps"] = 15000
 # logging to TensorBoard and write checkpoints (in timesteps)
 cfg["experiment"]["write_interval"] = 1000
 cfg["experiment"]["checkpoint_interval"] = 5000
-cfg["experiment"]["directory"] = "runs/mlp_36_mer"
+cfg["experiment"]["directory"] = "runs/mlp_36_mer/hindsight"
 
 agent = DQN(models=models,
             memory=memory,
