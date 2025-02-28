@@ -75,6 +75,14 @@ class HPEnv(gym.Env):
 
         # Detects for collision
         if new_pos in self.state:
+            # Try alternate action
+            for _ in range(2):
+                action = (action + 1) % 3
+                new_pos = get_new_pos(action)
+                if new_pos not in self.state:
+                    break
+
+        if new_pos in self.state:
             return (observation, 0, True, False, {})
 
         self.actions.append(action)

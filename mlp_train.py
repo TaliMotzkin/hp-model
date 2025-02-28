@@ -59,7 +59,7 @@ cfg["exploration"]["timesteps"] = 15000
 # logging to TensorBoard and write checkpoints (in timesteps)
 cfg["experiment"]["write_interval"] = 1000
 cfg["experiment"]["checkpoint_interval"] = 5000
-cfg["experiment"]["directory"] = "runs/mlp_36_mer/hindsight"
+cfg["experiment"]["directory"] = "runs/mlp_36_mer/retry_action"
 
 agent = DQN(models=models,
             memory=memory,
