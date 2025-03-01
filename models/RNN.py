@@ -1,9 +1,9 @@
 from typing import Mapping, Union, Any, Tuple
-
+# from einops import rearrange
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+from einops import rearrange, repeat
 from skrl.models.torch import Model, DeterministicMixin
 
 
@@ -20,18 +20,18 @@ class RNN_class(DeterministicMixin, Model):
         self.hidden_size = hidden_size  # Hout
         self.sequence_length = sequence_length
 
-        self.lstm = nn.LSTM(input_size=self.num_observations, #in their code action_depth + hp_depth + energy_depth = 4+2+0
+        self.lstm = nn.LSTM(input_size=6, #in their code action_depth + hp_depth + energy_depth = 4+2+0
                           hidden_size=self.hidden_size,
                           num_layers=self.num_layers,
                           batch_first=True)  # batch_first -> (batch, sequence, features)
 
         self.fc1 = nn.Linear(self.hidden_size , self.num_actions)
 
-        self.net = nn.Sequential(nn.Linear(self.hidden_size, 64),
-                                 nn.ReLU(),
-                                 nn.Linear(64, 32),
-                                 nn.ReLU(),
-                                 nn.Linear(32, self.num_actions))
+        # self.net = nn.Sequential(nn.Linear(self.hidden_size, 64),
+        #                          nn.ReLU(),
+        #                          nn.Linear(64, 32),
+        #                          nn.ReLU(),
+        #                          nn.Linear(32, self.num_actions))
 
     # def get_specification(self):
     #     # batch size (N) is the number of envs
@@ -108,21 +108,45 @@ class RNN_class(DeterministicMixin, Model):
     #
     #     return self.net(rnn_output), {"rnn": [rnn_states[0], rnn_states[1]]}
 
+    # def compute(self, inputs, role):
+    #     states = inputs["states"]
+    #
+    #
+    #     one_hot_states = F.one_hot(states.long(), 4).float()
+    #     concated_one_hot = torch.cat([self.seq_encoded_HP[2:, :].unsqueeze(0), one_hot_states], dim = -1)
+    #     # print("concated_one_hot", concated_one_hot.shape)
+    #
+    #     # critic models are only used during training
+    #     rnn_input = concated_one_hot.view(-1, self.sequence_length,
+    #                             states.shape[-1])  # (N, L, Hin): N=batch_size, L=sequence_length
+    #
+    #     batch_size = rnn_input.size(0) // self.sequence_length
+    #     hidden_states = torch.zeros(self.num_layers * 1, batch_size, self.hidden_size)  # (D * num_layers, N, L, Hout)
+    #
+    #     print("hidden_states", hidden_states.shape)
+    #     print("rnn_input", rnn_input.shape)
+    #     rnn_output, h_0 = self.lstm(rnn_input, (hidden_states, hidden_states.clone()))
+    #
+    #     # flatten the RNN output
+    #     rnn_output =  rnn_output.view(-1, rnn_output.shape[-1])   # (N, L, D ∗ Hout) -> (N * L, D ∗ Hout)
+    #
+    #     return self.fc1(rnn_output), {}
+
+
     def compute(self, inputs, role):
-        states = inputs["states"]
+        observation_actions, observation_sequence = inputs["states"][..., :self.sequence_length], inputs["states"][..., self.sequence_length:]
+
+        one_hot_actions = F.one_hot(observation_actions.long(), num_classes=4)
+        one_hot_sequence = F.one_hot(observation_sequence.long(), num_classes=2)
+        one_hot_input = torch.cat([one_hot_actions, one_hot_sequence], dim=-1)
 
 
-        # critic models are only used during training
-        rnn_input = states.view(-1, self.sequence_length,
-                                states.shape[-1])  # (N, L, Hin): N=batch_size, L=sequence_length
+        batch_size = observation_actions.size(0)
 
-        batch_size = rnn_input.size(0) // self.sequence_length
-        hidden_states = torch.zeros(self.num_layers * 1, batch_size, self.hidden_size)  # (D * num_layers, N, L, Hout)
+        hidden_states = torch.zeros(self.num_layers * 1, batch_size, self.hidden_size,  device=inputs["states"].device)  # (D * num_layers, Batch, Hidden)
 
-        rnn_output, h_0 = self.lstm(rnn_input, (hidden_states, hidden_states.clone()))
+        rnn_output, h_0 = self.lstm(one_hot_input.float(), (hidden_states, hidden_states.clone()))
 
-        # flatten the RNN output
-        rnn_output =  rnn_output.view(-1, rnn_output.shape[-1])   # (N, L, D ∗ Hout) -> (N * L, D ∗ Hout)
-
-        return self.fc1(rnn_output), {}
+        out = self.fc1(rnn_output[:, -1, :])
+        return out, {}
 

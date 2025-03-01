@@ -12,12 +12,14 @@ from skrl.trainers.torch import SequentialTrainer
 from skrl.utils import set_seed
 from skrl.models.torch import deterministic
 from skrl.utils.model_instantiators.torch import Shape, deterministic_model
+import torch.nn.functional as F
 
 import matplotlib.pyplot as plt
 import numpy as np
 from envs import Action
 
 from Agents.Costum_DQN import DQNAgent
+from torch.utils.tensorboard import SummaryWriter
 
 
 
@@ -55,6 +57,7 @@ def plot_episode_rewards(max_rewards, mean_rewards):
 
 
 def train_dqn(env, agent, episodes=1000, target_update=10):
+    writer = SummaryWriter(log_dir='./tensorboard_logs')
     max_rewards_per_episode = []
     mean_rewards_per_episode = []
 
@@ -64,24 +67,29 @@ def train_dqn(env, agent, episodes=1000, target_update=10):
         state, _ = env.reset()
         # if episode_step < 5:
         #     print("state", state)
-        state = torch.tensor(state, dtype=torch.float32).to(device)
+        state_actions = torch.tensor(state[0], dtype=torch.float32).to(device)
+        state_seq = torch.tensor(state[1], dtype=torch.float32).to(device)
+
         agent.q_network.reset_hidden(batch_size=1)
         done = False
 
         episode_rewards = []  # Track all rewards in this episode
 
         while not done:
-            action = agent.select_action_1(state)
+            action = agent.select_action_1(state_actions, state_seq)
             next_state, reward, done, _, _ = env.step(action)
             # if episode_step < 5:
             #     print("state", next_state)
 
-            next_state = torch.tensor(next_state, dtype=torch.float32).to(device)
+            next_state_actions = torch.tensor(next_state[0], dtype=torch.float32).to(device)
+            next_state_seq = torch.tensor(next_state[1], dtype=torch.float32).to(device)
 
-            agent.buffer.push(state, action, reward, next_state, done)
+
+            agent.buffer.push(state_actions, state_seq, action, reward, next_state_actions, next_state_seq, done)
             agent.train_step()
 
-            state = next_state
+            state_actions = next_state_actions
+            state_seq = next_state_seq
             episode_rewards.append(reward)  # Store reward per timestep
 
         # Compute statistics for the episode
@@ -91,8 +99,11 @@ def train_dqn(env, agent, episodes=1000, target_update=10):
         max_rewards_per_episode.append(max_reward)
         mean_rewards_per_episode.append(mean_reward)
 
+        writer.add_scalar('Max Reward/Episode', max_reward, episode)
+        writer.add_scalar('Mean Reward/Episode', mean_reward, episode)
+
         # Decay epsilon
-        agent.epsilon = max(agent.epsilon * agent.epsilon_decay, agent.epsilon_min)
+        agent.epsilon = agent.epsilon_min + (agent.epsilon_max - agent.epsilon_min)* np.exp(-episode_step*5/episodes)
 
         # Update target network every X episodes
         if episode % target_update == 0:
@@ -105,12 +116,13 @@ def train_dqn(env, agent, episodes=1000, target_update=10):
     end_time = time.time()
     print(f"Total time: {end_time - start_time}")
     plot_episode_rewards(max_rewards_per_episode, mean_rewards_per_episode)
+    writer.close()
 
 # Automatically detect device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
-def set_seed(seed=42):
+def set_seed(device, seed=42):
     """Ensure reproducibility by setting the random seed globally"""
     random.seed(seed)
     np.random.seed(seed)
@@ -122,7 +134,7 @@ def set_seed(seed=42):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False  # Disable optimizations that may introduce randomness
 
-    seq = "PPHPPHHPPHHPPPPPHHHHHHHHHHPPPPPPHHPPHHPPHPPHHHHH"
+    seq = "PPPHHPPHHPPPPPHHHHHHHPPHHPPPPHHPPHPP"
     env = gym.make('HPEnv_v0', seq=seq)
     env.reset(seed=seed)
 
@@ -130,7 +142,8 @@ def set_seed(seed=42):
     return env
 
 seed = 0
-env = set_seed(seed)
+
+env = set_seed(device, seed)
 agent = DQNAgent(env)
 
-train_dqn(env, agent, episodes=100000)
+train_dqn(env, agent, episodes=250000)

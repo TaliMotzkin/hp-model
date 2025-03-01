@@ -11,6 +11,7 @@ from skrl.trainers.torch import SequentialTrainer
 from skrl.utils import set_seed
 from skrl.models.torch import deterministic
 from skrl.utils.model_instantiators.torch import Shape, deterministic_model
+import torch.nn.functional as F
 
 from envs import Action
 
@@ -22,10 +23,12 @@ set_seed()  # e.g. `set_seed(42)` for fixed seed
 # load and wrap the gymnasium environment.
 # note: the environment version may change depending on the gymnasium version
 
-seq = 'PPHPPHHPPHHPPPPPHHHHHHHHHHPPPPPPHHPPHHPPHPPHHHHH'
+seq = 'PPPHHPPHHPPPPPHHHHHHHPPHHPPPPHHPPHPP'
 env = gym.make('HPEnv_v0', seq=seq)
 env.num_envs = 1 #currently non vectorized enviroenmnt
 env = wrap_env(env)
+
+
 
 observations, _ = env.reset()
 
@@ -33,17 +36,17 @@ device = env.device
 
 
 # instantiate a memory as experience replay
-memory = RandomMemory(memory_size=500, num_envs=env.num_envs, device=device, replacement=False)
-
+memory = RandomMemory(memory_size=50000, num_envs=env.num_envs, device=device, replacement=False)
+# print("env.observation_space", env.observation_space)
 
 # instantiate the agent's models (function approximators) using the model instantiator utility.
 # DQN requires 2 models, visit its documentation for more details
 # https://skrl.readthedocs.io/en/latest/api/agents/dqn.html#models
 models = {}
 models["q_network"] = RNN_class(observation_space=env.observation_space, action_space=env.action_space, device=env.device,
-                          clip_actions=False, num_envs=env.num_envs, num_layers=1, hidden_size=32,sequence_length=1)
+                          clip_actions=False, num_envs=env.num_envs, num_layers=2, hidden_size=256,sequence_length=36)
 models["target_q_network"] = RNN_class(observation_space=env.observation_space, action_space=env.action_space, device=env.device,
-                          clip_actions=False, num_envs=env.num_envs, num_layers=1, hidden_size=32,sequence_length=1)
+                          clip_actions=False, num_envs=env.num_envs, num_layers=2, hidden_size=256,sequence_length=36)
 
 hidden_dict={"q_h":torch.zeros(1,1, 32)  # (D * num_layers, N, L, Hout)
 , "target_h":torch.zeros(1, 1, 32),
@@ -71,7 +74,7 @@ cfg["exploration"]["timesteps"] = 1500
 cfg["experiment"]["write_interval"] = 1000
 cfg["experiment"]["checkpoint_interval"] = 5000
 # cfg["batch_size"] = 64
-cfg["experiment"]["directory"] = "runs/hp-model"
+cfg["experiment"]["directory"] = "runs/LSTM_36_mer"
 
 agent = DQN(models=models,
             memory=memory,
