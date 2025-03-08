@@ -18,7 +18,8 @@ set_seed(42)  # e.g. `set_seed(42)` for fixed seed
 
 # load and wrap the gymnasium environment.
 # note: the environment version may change depending on the gymnasium version
-seq = "PPHPPHHPPHHPPPPPHHHHHHHHHHPPPPPPHHPPHHPPHPPHHHHH"
+# seq = "PPHPPHHPPHHPPPPPHHHHHHHHHHPPPPPPHHPPHHPPHPPHHHHH"
+seq = "PPPHHPPHHPPPPPHHHHHHHPPHHPPPPHHPPHPP"
 env = gym.make("HPEnv_v0", seq=seq)
 env = wrap_env(env)
 
@@ -52,13 +53,15 @@ for model in models.values():
 # configure and instantiate the agent (visit its documentation to see all the options)
 # https://skrl.readthedocs.io/en/latest/api/agents/dqn.html#configuration-and-hyperparameters
 cfg = DQN_DEFAULT_CONFIG.copy()
-cfg["learning_starts"] = 100
-cfg["exploration"]["final_epsilon"] = 0.04
-cfg["exploration"]["timesteps"] = 1500
+cfg["batch_size"] = 200
+cfg["learning_starts"] = 5000
+cfg["exploration"]["final_epsilon"] = 0.01
+cfg["exploration"]["timesteps"] = 15000
+cfg["learning_rate"] = 0.0005
 # logging to TensorBoard and write checkpoints (in timesteps)
 cfg["experiment"]["write_interval"] = 1000
 cfg["experiment"]["checkpoint_interval"] = 5000
-cfg["experiment"]["directory"] = "runs/transformer"
+cfg["experiment"]["directory"] = "runs/transformer_36_mer"
 
 agent = DQN(models=models,
             memory=memory,
@@ -69,7 +72,7 @@ agent = DQN(models=models,
 
 
 # configure and instantiate the RL trainer
-cfg_trainer = {"timesteps": 350000, "headless": True}
+cfg_trainer = {"timesteps": 500000, "headless": True}
 trainer = SequentialTrainer(cfg=cfg_trainer, env=env, agents=[agent])
 
 # start training

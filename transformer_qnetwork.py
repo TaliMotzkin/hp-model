@@ -50,7 +50,7 @@ class TransformerQNetwork(Model):
         x = F.relu(self.transformer(x))
         q_values = self.fc2(x)
 
-        return q_values, None, {}
+        return q_values[:, -1], {}
 
     def act(self, inputs, role):
         one_hot_states = F.one_hot(inputs["states"].long(), num_classes=4)

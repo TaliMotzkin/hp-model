@@ -46,7 +46,7 @@ class HPEnv(gym.Env):
         self.first_turn_left = False
 
     def step(self, action):
-        if not self.action_space.contains(action):
+        if not self.action_space.contains(action.item()):
             raise ValueError("%r (%s) invalid" % (action, type(action)))
 
         # Force the first turning action to be Left

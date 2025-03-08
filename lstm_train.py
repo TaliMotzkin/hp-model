@@ -20,7 +20,7 @@ set_seed(42)  # e.g. `set_seed(42)` for fixed seed
 # seq = "HHHPHPHHPPP"
 # seq = "PPHPPHHPPHHPPPPPHHHHHHHHHHPPPPPPHHPPHHPPHPPHHHHH"
 seq = "PPPHHPPHHPPPPPHHHHHHHPPHHPPPPHHPPHPP"
-env = gym.make("HPEnv_v0", seq=seq)
+env = gym.make_vec("HPEnv_v0", num_envs=3, seq=seq)
 env = wrap_env(env)
 
 device = env.device
@@ -63,7 +63,7 @@ cfg["experiment"]["checkpoint_interval"] = 5000
 cfg["learning_rate"] = 0.0005
 # cfg["learning_rate_scheduler"] = CosineAnnealingLR
 # cfg["learning_rate_scheduler_kwargs"] = {'T_max': 100}
-cfg["experiment"]["directory"] = "runs/lstm_36_mer/"
+cfg["experiment"]["directory"] = "runs/test/"
 
 agent = DQN(models=models,
             memory=memory,

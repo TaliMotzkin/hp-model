@@ -15,6 +15,7 @@ class LSTMQNetwork(Model):
         self.num_actions = action_space.n
         self.num_layers = 2
         self.d_model = d_model
+        self.device = device
 
         self.lstm = nn.LSTM(input_size=6, hidden_size=d_model, num_layers=self.num_layers, batch_first=True)
         self.fc1 = nn.Linear(d_model, d_model)
@@ -29,8 +30,8 @@ class LSTMQNetwork(Model):
 
         batch_size = one_hot_actions.shape[0]
 
-        h0 = torch.zeros(self.num_layers, batch_size, self.d_model).float()
-        c0 = torch.zeros(self.num_layers, batch_size, self.d_model).float()
+        h0 = torch.zeros(self.num_layers, batch_size, self.d_model, device=self.device)
+        c0 = torch.zeros(self.num_layers, batch_size, self.d_model, device=self.device)
         out, _ = self.lstm(one_hot_input, (h0, c0))
         x = out[:, -1, :]
 
@@ -48,8 +49,8 @@ class LSTMQNetwork(Model):
 
         batch_size = one_hot_actions.shape[0]
 
-        h0 = torch.zeros(self.num_layers, batch_size, self.d_model)
-        c0 = torch.zeros(self.num_layers, batch_size, self.d_model)
+        h0 = torch.zeros(self.num_layers, batch_size, self.d_model, device=self.device)
+        c0 = torch.zeros(self.num_layers, batch_size, self.d_model, device=self.device)
         out, _ = self.lstm(one_hot_input, (h0, c0))
         x = out[:, -1, :]
 
