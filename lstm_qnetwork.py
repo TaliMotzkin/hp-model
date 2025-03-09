@@ -6,7 +6,7 @@ import torch
 
 
 class LSTMQNetwork(Model):
-    def __init__(self, observation_space, action_space, device, d_model=128):
+    def __init__(self, observation_space, action_space, device, d_model=256):
         super().__init__(observation_space, action_space, device)
 
         # Flattened one-hot encoded observation
