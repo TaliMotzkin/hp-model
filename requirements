@@ -7,3 +7,4 @@ scikit-learn
 matplotlib
 einops
 tbparse
+mamba-ssm[causal-conv1d]

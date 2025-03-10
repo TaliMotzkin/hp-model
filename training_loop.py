@@ -11,15 +11,15 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
-from torch import nn
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from envs import Action
+from models import *
 
 seq = "HHHPPHPHPHPPHPHPHPPH"
 seed = 42
-algo = "updated_action_from_env"
+algo = "mamba_v2"
 num_episodes = 100_000
 
 base_dir = f"./{datetime.datetime.now().strftime('%m%d-%H%M')}-"
@@ -95,6 +95,7 @@ rewards_all_episodes = np.zeros(
     # dtype=np.int32
 )
 reward_max = 0
+best_folds = []
 # keep track of trapped SAW
 num_trapped = 0
 
@@ -142,66 +143,9 @@ print(initial_state)
 n_actions = env.action_space.n
 print("n_actions = ", n_actions)
 
-network_choice = "RNN_LSTM_onlyLastHidden"
+network_choice = "MambaModel"
 row_width = action_depth + hp_depth
 col_length = len(seq)
-
-
-class RNN_LSTM_onlyLastHidden(nn.Module):
-    """
-    LSTM version that just uses the information from the last hidden state
-    since the last hidden state has information from all previous states
-    basis for BiDirectional LSTM
-    """
-
-    def __init__(self, input_size, hidden_size, num_layers, num_classes):
-        super(RNN_LSTM_onlyLastHidden, self).__init__()
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
-        # change basic RNN to LSTM
-        # num_layers Default: 1
-        # bias Default: True
-        # batch_first Default: False
-        # dropout Default: 0
-        # bidirectional Default: False
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
-        # remove the sequence_length
-        self.fc = nn.Linear(hidden_size, num_classes)
-
-    def forward(self, x):
-        # Get data to cuda if possible
-        x = x.to(device)
-        # print("input x.size() = ", x.size())
-        # Set initial hidden and cell states
-        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device)
-        # LSTM needs a separate cell state (LSTM needs both hidden and cell state)
-        c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device)
-
-        # Forward propagate LSTM
-        # need to give LSTM both hidden and cell state (h0, c0)
-        out, _ = self.lstm(
-            x, (h0, c0)
-        )  # out: tensor of shape (batch_size, seq_length, hidden_size)
-
-        # Decode the hidden state of the last time step
-        # no need to reshape the out or concat
-        # out is going to take all mini-batches at the same time + last layer + all features
-        out = self.fc(out[:, -1, :])
-        # print("forward out = ", out)
-        return out
-
-    def sample_action(self, obs, epsilon):
-        """
-        greedy epsilon choose
-        """
-        coin = random.random()
-        if coin < epsilon:
-            explore_action = random.randint(0, 2)
-            return explore_action
-        else:
-            # print("exploit")
-            out = self.forward(obs)
-            return out.argmax().item()
 
 
 if network_choice == "RNN_LSTM_onlyLastHidden":
@@ -216,11 +160,29 @@ if network_choice == "RNN_LSTM_onlyLastHidden":
         f"inputs_size={input_size} hidden_size={hidden_size} num_layers={num_layers} num_classes={n_actions}"
     )
     # Initialize network (try out just using simple RNN, or GRU, and then compare with LSTM)
-    q = RNN_LSTM_onlyLastHidden(input_size, hidden_size, num_layers, n_actions).to(
+    q = RNN_LSTM_onlyLastHidden(input_size, hidden_size, num_layers, n_actions, device).to(
         device
     )
     q_target = RNN_LSTM_onlyLastHidden(
-        input_size, hidden_size, num_layers, n_actions
+        input_size, hidden_size, num_layers, n_actions, device
+    ).to(device)
+elif network_choice == "MambaModel":
+    # config for RNN
+    input_size = row_width
+    # number of nodes in the hidden layers
+    hidden_size = 64
+    num_layers = 2
+
+    print("RNN_LSTM_onlyLastHidden with:")
+    print(
+        f"inputs_size={input_size} hidden_size={hidden_size} num_layers={num_layers} num_classes={n_actions}"
+    )
+    # Initialize network (try out just using simple RNN, or GRU, and then compare with LSTM)
+    q = MambaModel(input_size, hidden_size, num_layers, n_actions, device).to(
+        device
+    )
+    q_target = MambaModel(
+        input_size, hidden_size, num_layers, n_actions, device
     ).to(device)
 
 q_target.load_state_dict(q.state_dict())
@@ -441,6 +403,8 @@ for n_episode in tqdm(range(num_episodes)):
     if score > reward_max:
         print("found new highest reward = ", score)
         reward_max = score
+        best_folds.append(info)
+        print(info)
 
     if (n_episode == 0) or ((n_episode + 1) % show_every == 0):
         print(
@@ -465,6 +429,13 @@ print(elapsed)
 # Save the rewards_all_episodes with numpy save
 with open(f"{save_path}{config_str}-rewards_all_episodes.npy", "wb") as f:
     np.save(f, rewards_all_episodes)
+
+# Save the best foldings
+with open(f"{save_path}{config_str}-best_folds", "wb") as f:
+    pickle.dump(best_folds, f, protocol=pickle.HIGHEST_PROTOCOL)
+    # Print the best foldings
+    print("Best foldings:")
+    print(best_folds)
 
 # Save the pytorch model
 # Saving & Loading Model for Inference
