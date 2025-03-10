@@ -6,3 +6,4 @@ gymnasium
 scikit-learn
 matplotlib
 einops
+tbparse

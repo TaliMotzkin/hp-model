@@ -74,7 +74,6 @@ class HPEnv(gym.Env):
 
         new_pos = get_new_pos(action)
 
-        observation = self.observe()
 
         # Detects for collision
         if new_pos in self.state:
@@ -85,14 +84,6 @@ class HPEnv(gym.Env):
                 if new_pos not in self.state:
                     break
 
-        if new_pos in self.state:
-            return (observation, 0, True, False, {})
-
-        self.actions.append(action)
-        self.state.append(new_pos)
-
-        self.truncated = False # Always False
-
         # Detects for being trapped
         is_free = False
         for next_action in (0, 1, 2):
@@ -100,6 +91,11 @@ class HPEnv(gym.Env):
             if next_pos not in self.state:
                 is_free = True
         is_trapped = not is_free
+
+        self.actions.append(action)
+        self.state.append(new_pos)
+        observation = self.observe()
+
 
         self.terminated = is_trapped
         self.truncated = len(self.state) == self.seq_len

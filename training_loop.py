@@ -1,31 +1,31 @@
-import gymnasium as gym
+import datetime
+import os  # for creating directories
+import pickle
 import random
-import numpy as np
+import sys
+from collections import deque
+from time import time
 
+import gymnasium as gym
+import numpy as np
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
-
-import os # for creating directories
-import sys
-import datetime
-
-# time the program
-from time import time
-from envs import Action
 from torch import nn
-from collections import deque
+from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-import pickle
+
+from envs import Action
 
 seq = "HHHPPHPHPHPPHPHPHPPH"
 seed = 42
-algo = "test"
+algo = "updated_action_from_env"
 num_episodes = 100_000
 
 base_dir = f"./{datetime.datetime.now().strftime('%m%d-%H%M')}-"
 config_str = f"{seq[:6]}-{algo}-{seed}-{num_episodes}"
 save_path = base_dir + config_str + "/"
+writer = SummaryWriter(f"logs/{save_path}")
 
 # whether to show or save the matplotlib plots
 display_mode = "save"  # save for CMD, show for ipynb
@@ -45,6 +45,7 @@ if not os.path.exists(save_path):
 
 # apply flush=True to every print function call in the module with a partial function
 from functools import partial
+
 print = partial(print, flush=True)
 
 print("seq = ", seq)
@@ -64,7 +65,7 @@ TARGET_UPDATE = 100  # fix to 100
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # hyperparameters
-gamma = 0.98    # discount rate
+gamma = 0.98  # discount rate
 batch_size = 32
 train_times = 10  # number of times train was run in a loop
 
@@ -103,12 +104,15 @@ num_restarts = 1  # for cosine decay warmRestart=True
 exploration_decay_rate = 5  # for exponential decay
 start_decay = 0  # for exponential and linear
 print(f"decay_mode={decay_mode} warmRestart={warmRestart}")
-print(f"num_restarts={num_restarts} exploration_decay_rate={exploration_decay_rate} start_decay={start_decay}")
+print(
+    f"num_restarts={num_restarts} exploration_decay_rate={exploration_decay_rate} start_decay={start_decay}"
+)
 
 
 # Nov30 2021 add one more column of step_E
 hp_depth = 2  # {H,P} binary alphabet
 action_depth = 4  # 0,1,2,3 in observation_box
+
 
 def one_hot_state(observation_actions, observation_sequence):
     one_hot_actions = F.one_hot(torch.from_numpy(observation_actions), num_classes=4)
@@ -116,8 +120,9 @@ def one_hot_state(observation_actions, observation_sequence):
     one_hot_input = torch.cat([one_hot_actions, one_hot_sequence], dim=-1).float()
     return one_hot_input
 
+
 # NOTE: partial_reward Sep15 changed to delta of curr-prev rewards
-env = gym.make('HPEnv_v0', seq=seq)
+env = gym.make("HPEnv_v0", seq=seq)
 
 torch.manual_seed(seed)
 random.seed(seed)
@@ -141,12 +146,14 @@ network_choice = "RNN_LSTM_onlyLastHidden"
 row_width = action_depth + hp_depth
 col_length = len(seq)
 
+
 class RNN_LSTM_onlyLastHidden(nn.Module):
     """
     LSTM version that just uses the information from the last hidden state
     since the last hidden state has information from all previous states
     basis for BiDirectional LSTM
     """
+
     def __init__(self, input_size, hidden_size, num_layers, num_classes):
         super(RNN_LSTM_onlyLastHidden, self).__init__()
         self.hidden_size = hidden_size
@@ -175,7 +182,7 @@ class RNN_LSTM_onlyLastHidden(nn.Module):
         out, _ = self.lstm(
             x, (h0, c0)
         )  # out: tensor of shape (batch_size, seq_length, hidden_size)
-        
+
         # Decode the hidden state of the last time step
         # no need to reshape the out or concat
         # out is going to take all mini-batches at the same time + last layer + all features
@@ -189,7 +196,7 @@ class RNN_LSTM_onlyLastHidden(nn.Module):
         """
         coin = random.random()
         if coin < epsilon:
-            explore_action = random.randint(0,2)
+            explore_action = random.randint(0, 2)
             return explore_action
         else:
             # print("exploit")
@@ -205,16 +212,23 @@ if network_choice == "RNN_LSTM_onlyLastHidden":
     num_layers = 2
 
     print("RNN_LSTM_onlyLastHidden with:")
-    print(f"inputs_size={input_size} hidden_size={hidden_size} num_layers={num_layers} num_classes={n_actions}")
+    print(
+        f"inputs_size={input_size} hidden_size={hidden_size} num_layers={num_layers} num_classes={n_actions}"
+    )
     # Initialize network (try out just using simple RNN, or GRU, and then compare with LSTM)
-    q = RNN_LSTM_onlyLastHidden(input_size, hidden_size, num_layers, n_actions).to(device)
-    q_target = RNN_LSTM_onlyLastHidden(input_size, hidden_size, num_layers, n_actions).to(device)
+    q = RNN_LSTM_onlyLastHidden(input_size, hidden_size, num_layers, n_actions).to(
+        device
+    )
+    q_target = RNN_LSTM_onlyLastHidden(
+        input_size, hidden_size, num_layers, n_actions
+    ).to(device)
 
 q_target.load_state_dict(q.state_dict())
 
 optimizer = optim.Adam(q.parameters(), lr=learning_rate)
 
-class ReplayBuffer():
+
+class ReplayBuffer:
     """
     for DQN (off-policy RL), big buffer of experience
     you don't update weights of the NN as you run
@@ -222,6 +236,7 @@ class ReplayBuffer():
     your experience of the environment to this ReplayBuffer
     It has a max-size to fit in certain examples
     """
+
     def __init__(self, buffer_limit):
         self.buffer = deque(maxlen=buffer_limit)
 
@@ -252,40 +267,52 @@ class ReplayBuffer():
         s_prime_lst = np.array(s_prime_lst)
         done_mask_lst = np.array(done_mask_lst)
 
-        return torch.tensor(s_lst, device=device, dtype=torch.float), torch.tensor(a_lst, device=device), \
-               torch.tensor(r_lst, device=device), torch.tensor(s_prime_lst, device=device, dtype=torch.float), \
-               torch.tensor(done_mask_lst, device=device)
+        return (
+            torch.tensor(s_lst, device=device, dtype=torch.float),
+            torch.tensor(a_lst, device=device),
+            torch.tensor(r_lst, device=device),
+            torch.tensor(s_prime_lst, device=device, dtype=torch.float),
+            torch.tensor(done_mask_lst, device=device),
+        )
 
     def size(self):
         return len(self.buffer)
 
     def save(self, save_path):
         """save in .pkl file"""
-        with open(save_path, 'wb') as handle:
+        with open(save_path, "wb") as handle:
             pickle.dump(self.buffer, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     def load(self, file_path):
         """load a .pkl file"""
-        with open(file_path, 'rb') as handle:
+        with open(file_path, "rb") as handle:
             self.buffer = pickle.load(handle)
+
 
 memory = ReplayBuffer(buffer_limit)
 
 # time the experiment
 start_time = time()
 
-def ExponentialDecay(episode, num_episodes,
-                min_exploration_rate, max_exploration_rate,
-                exploration_decay_rate=5,
-                start_decay=0):
+
+def ExponentialDecay(
+    episode,
+    num_episodes,
+    min_exploration_rate,
+    max_exploration_rate,
+    exploration_decay_rate=5,
+    start_decay=0,
+):
     decay_duration = num_episodes - start_decay
     exploration_rate = max_exploration_rate
     if episode > start_decay:
-        exploration_rate = min_exploration_rate + \
-            (max_exploration_rate - min_exploration_rate) * np.exp(-exploration_decay_rate*(episode-start_decay)/decay_duration)
+        exploration_rate = min_exploration_rate + (
+            max_exploration_rate - min_exploration_rate
+        ) * np.exp(-exploration_decay_rate * (episode - start_decay) / decay_duration)
     return exploration_rate
 
-def train(q, q_target, memory, optimizer):
+
+def train(q, q_target, memory, optimizer, n_episode):
     """
     core algorithm of Deep Q-learning
 
@@ -298,7 +325,7 @@ def train(q, q_target, memory, optimizer):
         # more sample efficient, because you continuously learn from
         # past situations
         # key advantage of Off-policy
-        s,a,r,s_prime,done_mask = memory.sample(batch_size)
+        s, a, r, s_prime, done_mask = memory.sample(batch_size)
         # the torch size is [batch_size, rows, cols], ie batch_first
         # print("DQN train --> s.size = ", s.size())
         # print(s)
@@ -307,7 +334,7 @@ def train(q, q_target, memory, optimizer):
 
         # forward once to q
         q_out = q(s)
-        q_a = q_out.gather(1,a)
+        q_a = q_out.gather(1, a)
         # forward another time for q_target
         max_q_prime = q_target(s_prime).max(1)[0].unsqueeze(1)
         # calculate the target value
@@ -327,6 +354,10 @@ def train(q, q_target, memory, optimizer):
         # for param in q.parameters():
         #     param.grad.data.clamp_(-1, 1)
         optimizer.step()
+        if i == 0:
+            # Log loss onto Tensorboard
+            writer.add_scalar("Q-Network Loss", loss, n_episode)
+
 
 for n_episode in tqdm(range(num_episodes)):
     epsilon = ExponentialDecay(
@@ -357,6 +388,9 @@ for n_episode in tqdm(range(num_episodes)):
 
         # take the step and get the returned observation s_prime
         (s_prime, r, terminated, truncated, info) = env.step(a)
+        # update a to the actual action taken, since the environment might take a different one
+        # to enforce the first turn left constraint and avoid collisions
+        a = info["actions"][-1]
         done = terminated or truncated
 
         # Only keep first turn of Left
@@ -369,12 +403,12 @@ for n_episode in tqdm(range(num_episodes)):
             "one-hot" --> return the one-hot version of the quaternary tuple
         """
         s_prime = one_hot_state(s_prime[0], s_prime[1])
-                                # state_E_col, step_E_col)
+        # state_E_col, step_E_col)
 
         # NOTE: done_mask is for when you get the end of a run,
         # then is no future reward, so we mask it with done_mask
         done_mask = 0.0 if done else 1.0
-        memory.put((s,a,r,s_prime, done_mask))
+        memory.put((s, a, r, s_prime, done_mask))
         s = s_prime
 
         # Add new reward
@@ -389,8 +423,8 @@ for n_episode in tqdm(range(num_episodes)):
     # eventually if memory is big enough, we start running the training loop
     # start training after 2000 (for eg) can get a wider distribution
     # print("memory.size() = ", memory.size())
-    if memory.size()>mem_start_train:
-        train(q, q_target, memory, optimizer)
+    if memory.size() > mem_start_train:
+        train(q, q_target, memory, optimizer, n_episode)
 
     # Update the target network, copying all weights and biases in DQN
     if n_episode % TARGET_UPDATE == 0:
@@ -398,34 +432,43 @@ for n_episode in tqdm(range(num_episodes)):
 
     # Add current episode reward to total rewards list
     rewards_all_episodes[n_episode] = score
+    # Add episodic reward onto Tensorboard
+    writer.add_scalar("Reward (Episode)", score, n_episode)
+    # Add window of max episodic reward over the last 200 episodes onto Tensorboard
+    if n_episode > 200:
+        writer.add_scalar("Reward (Episode Windowed)", np.max(rewards_all_episodes[n_episode - 200 : n_episode]), n_episode)
     # update max reward found so far
     if score > reward_max:
         print("found new highest reward = ", score)
         reward_max = score
 
-    if (n_episode == 0) or ((n_episode+1) % show_every == 0):
-        print("Episode {}, score: {:.1f}, epsilon: {:.2f}, reward_max: {}".format(
-            n_episode,
-            score,
-            epsilon,
-            reward_max,
-        ))
-        print(f"\ts_prime: {s_prime[:3], s_prime.shape}, reward: {r}, done: {done}, info: {info}")
+    if (n_episode == 0) or ((n_episode + 1) % show_every == 0):
+        print(
+            "Episode {}, score: {:.1f}, epsilon: {:.2f}, reward_max: {}".format(
+                n_episode,
+                score,
+                epsilon,
+                reward_max,
+            )
+        )
+        print(
+            f"\ts_prime: {s_prime[:3], s_prime.shape}, reward: {r}, done: {done}, info: {info}"
+        )
     # move on to the next episode
 
-print('Complete')
+print("Complete")
 # for time records
 end_time = time()
 elapsed = end_time - start_time
 print(elapsed)
 
 # Save the rewards_all_episodes with numpy save
-with open(f'{save_path}{config_str}-rewards_all_episodes.npy', 'wb') as f:
+with open(f"{save_path}{config_str}-rewards_all_episodes.npy", "wb") as f:
     np.save(f, rewards_all_episodes)
 
 # Save the pytorch model
 # Saving & Loading Model for Inference
 # Save/Load state_dict (Recommended)
-torch.save(q.state_dict(), f'{save_path}{config_str}-state_dict.pth')
+torch.save(q.state_dict(), f"{save_path}{config_str}-state_dict.pth")
 
 env.close()
