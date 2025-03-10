@@ -26,7 +26,7 @@ class HPEnv(gym.Env):
                 observation_sequence.append(0)
             elif character == 'P':
                 observation_sequence.append(1)
-        self.observation_sequence = np.array(observation_sequence, dtype=np.uint8)
+        self.observation_sequence = np.array(observation_sequence, dtype=np.int64)
 
         self.reset()
 
@@ -38,15 +38,18 @@ class HPEnv(gym.Env):
         self.action_space = spaces.Discrete(3)
         # The observation space is the series of actions taken
         # 0 = Left, 1 = Forward, 2 = Right, 3 = No action,
-        self.observation_space = spaces.Tuple((spaces.Box(low=0, high=3, shape=(self.seq_len,), dtype=np.uint8),
-                                               spaces.Box(low=0, high=1, shape=(self.seq_len,), dtype=np.uint8)))
+        self.observation_space = spaces.Tuple((spaces.Box(low=0, high=3, shape=(self.seq_len,), dtype=np.int64),
+                                               spaces.Box(low=0, high=1, shape=(self.seq_len,), dtype=np.int64)))
 
         # Whether the first left turn left has been taken
         # False after environment reset
         self.first_turn_left = False
 
     def step(self, action):
-        if not self.action_space.contains(action.item()):
+        if not type(action) is int:
+            action = action.item()
+
+        if not self.action_space.contains(action):
             raise ValueError("%r (%s) invalid" % (action, type(action)))
 
         # Force the first turning action to be Left
@@ -133,7 +136,7 @@ class HPEnv(gym.Env):
 
 
     def observe(self):
-        observation_actions = np.ones(shape=(self.seq_len,), dtype=np.uint8) * 3
+        observation_actions = np.ones(shape=(self.seq_len,), dtype=np.int64) * 3
 
         for i, action in enumerate(self.actions):
             observation_actions[i + 2] = action

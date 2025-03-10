@@ -3,7 +3,7 @@ import gymnasium as gym
 from envs import Action
 
 seq = 'PPHPPHHPPHHPPPPPHHHHHHHHHHPPPPPPHHPPHHPPHPPHHHHH'
-env = gym.make_vec('HPEnv_v0', seq=seq)
+env = gym.make('HPEnv_v0', seq=seq)
 
 observations, _ = env.reset()
 print(observations)
