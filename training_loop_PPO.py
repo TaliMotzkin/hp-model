@@ -29,9 +29,11 @@ network_choice = args.network_choice
 num_episodes = args.num_episodes
 agent_choice = args.agent_choice
 buffer = args.buffer
+update_timestep = args.update_timestep
+K_epochs = args.K_epochs               # update policy for K epochs in one PPO update
 
 base_dir = f"./{datetime.datetime.now().strftime('%m%d-%H%M')}-"
-config_str = f"{seq[:6]}-{algo}-{agent_choice}-{seed}-{num_episodes}"
+config_str = f"{seq[:6]}-{algo}-{agent_choice}-{seed}-{num_episodes}-not_fixing_action"
 save_path = base_dir + config_str + "/"
 writer = SummaryWriter(f"logs/{save_path}")
 
@@ -46,7 +48,7 @@ else:
 if not os.path.exists(save_path):
     os.makedirs(save_path)
 
-#based on https://github.com/nikhilbarhate99/PPO-PyTorch/blob/master/train.py#L39
+
 
 # apply flush=True to every print function call in the module with a partial function
 from functools import partial
@@ -70,7 +72,6 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 gamma = 0.98  # discount rate
 lr_actor = 0.0005
 lr_critic = 0.0001
-update_timestep = max_steps_per_episode * 4
 
 
 print("##### Summary of Hyperparameters #####")
@@ -83,7 +84,6 @@ print("##### End of Summary of Hyperparameters #####")
 
 # render settings
 show_every = num_episodes // 2  # for plot_print_rewards_stats
-
 # metric for evaluation
 rewards_all_episodes = np.zeros(
     (num_episodes,),
@@ -143,7 +143,6 @@ col_length = len(seq)
 
 state_dim = row_width
 eps_clip = 0.2
-K_epochs = 10               # update policy for K epochs in one PPO update
 
 
 ppo_agent = PPO(state_dim, n_actions, lr_actor, lr_critic, gamma, K_epochs, eps_clip, device, algo, writer)
@@ -172,10 +171,11 @@ for n_episode in tqdm(range(num_episodes)):
         a = ppo_agent.select_action(s.float().unsqueeze(0))
         (s_prime, r, terminated, truncated, info) = env.step(a)
 
-        a = info["actions"][-1]
+        # a = info["actions"][-1]
         done = terminated or truncated
-        done_mask = 0.0 if done else 1.0
+        done_mask = 1.0 if done else 0.0
 
+        print("done_mask", done_mask)
         # saving reward and is_terminals
         ppo_agent.buffer.rewards.append(r)
         ppo_agent.buffer.is_terminals.append(done_mask)
@@ -190,10 +190,11 @@ for n_episode in tqdm(range(num_episodes)):
         if done:
             break
 
+    print("ppo_agent.buffer.is_terminals", ppo_agent.buffer.is_terminals, len(ppo_agent.buffer.is_terminals))
     # update PPO agent
     if n_episode % update_timestep == 0 and n_episode > 0:
         # print("updating")
-        ppo_agent.update(n_episode)
+        ppo_agent.update(n_episode, num_episodes)
 
 
 
