@@ -139,7 +139,7 @@ class HPEnv(gym.Env):
 
         return (observation_actions, self.observation_sequence)
 
-    def reset(self, seed: int | None = None, options: dict[str, Any] | None = None):
+    def reset(self, seed = None, options = None):
         self.actions = []
         self.prev_reward = 0
         self.state = [ (0, 0), (0, 1) ]

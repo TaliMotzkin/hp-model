@@ -30,7 +30,7 @@ class RNN_LSTM_onlyLastHidden(nn.Module):
     def forward(self, x):
         # Get data to cuda if possible
         x = x.to(self.device)
-        # print("input x.size() = ", x.size())
+        # print("input x.size() = ", x.size(), x)
         # Set initial hidden and cell states
         h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(self.device)
         # LSTM needs a separate cell state (LSTM needs both hidden and cell state)
@@ -42,6 +42,7 @@ class RNN_LSTM_onlyLastHidden(nn.Module):
             x, (h0, c0)
         )  # out: tensor of shape (batch_size, seq_length, hidden_size)
 
+        # print("lstm out", out)
         # Decode the hidden state of the last time step
         # no need to reshape the out or concat
         # out is going to take all mini-batches at the same time + last layer + all features

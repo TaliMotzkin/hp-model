@@ -16,14 +16,19 @@ from tqdm import tqdm
 
 from envs import Action
 from models import *
+from config import *
 
-seq = "HHHPPHPHPHPPHPHPHPPH"
-seed = 42
-algo = "mamba_v2"
-num_episodes = 100_000
+args = parse_args()
+seq = args.seq
+seed = args.seed
+algo = args.network_choice
+network_choice = args.network_choice
+num_episodes = args.num_episodes
+agent_choice = args.agent_choice
+buffer = args.buffer
 
 base_dir = f"./{datetime.datetime.now().strftime('%m%d-%H%M')}-"
-config_str = f"{seq[:6]}-{algo}-{seed}-{num_episodes}"
+config_str = f"{seq[:6]}-{algo}-{agent_choice}-{seed}-{num_episodes}-{buffer}"
 save_path = base_dir + config_str + "/"
 writer = SummaryWriter(f"logs/{save_path}")
 
@@ -58,7 +63,9 @@ max_steps_per_episode = len(seq)
 
 learning_rate = 0.0005
 
-mem_start_train = max_steps_per_episode * 50  # for memory.size() start training
+# mem_start_train = max_steps_per_episode * 50  # for memory.size() start training
+mem_start_train = 200  # for memory.size() start training
+
 TARGET_UPDATE = 100  # fix to 100
 
 # if gpu is to be used
@@ -70,7 +77,8 @@ batch_size = 32
 train_times = 10  # number of times train was run in a loop
 
 # capped at 50,000 for <=48mer
-buffer_limit = int(min(50000, num_episodes // 10))  # replay-buffer size
+# buffer_limit = int(min(50000, num_episodes // 10))  # replay-buffer size
+buffer_limit = 1100
 
 print("##### Summary of Hyperparameters #####")
 print("learning_rate: ", learning_rate)
@@ -87,7 +95,7 @@ max_exploration_rate = 1
 min_exploration_rate = 0.01
 
 # render settings
-show_every = num_episodes // 1000  # for plot_print_rewards_stats
+show_every = num_episodes // 2  # for plot_print_rewards_stats
 pause_t = 0.0
 # metric for evaluation
 rewards_all_episodes = np.zeros(
@@ -143,7 +151,6 @@ print(initial_state)
 n_actions = env.action_space.n
 print("n_actions = ", n_actions)
 
-network_choice = "MambaModel"
 row_width = action_depth + hp_depth
 col_length = len(seq)
 
@@ -173,7 +180,7 @@ elif network_choice == "MambaModel":
     hidden_size = 64
     num_layers = 2
 
-    print("RNN_LSTM_onlyLastHidden with:")
+    print("MambaModel with:")
     print(
         f"inputs_size={input_size} hidden_size={hidden_size} num_layers={num_layers} num_classes={n_actions}"
     )
@@ -189,6 +196,11 @@ q_target.load_state_dict(q.state_dict())
 
 optimizer = optim.Adam(q.parameters(), lr=learning_rate)
 
+beta_start = 0.4
+beta_end = 1.0
+
+def get_beta(current_step, num_episodes):
+    return min(beta_end, beta_start + (beta_end - beta_start) * (current_step / num_episodes))
 
 class ReplayBuffer:
     """
@@ -223,15 +235,14 @@ class ReplayBuffer:
 
         # converting the list to a single numpy.ndarray with numpy.array()
         # before converting to a tensor
-        s_lst = np.array(s_lst)
+        s_lst = torch.stack(s_lst)
         a_lst = np.array(a_lst)
         r_lst = np.array(r_lst)
-        s_prime_lst = np.array(s_prime_lst)
+        s_prime_lst = torch.stack(s_prime_lst)
         done_mask_lst = np.array(done_mask_lst)
-
         return (
             torch.tensor(s_lst, device=device, dtype=torch.float),
-            torch.tensor(a_lst, device=device),
+            torch.tensor(a_lst, device=device, dtype=torch.int64),
             torch.tensor(r_lst, device=device),
             torch.tensor(s_prime_lst, device=device, dtype=torch.float),
             torch.tensor(done_mask_lst, device=device),
@@ -251,7 +262,303 @@ class ReplayBuffer:
             self.buffer = pickle.load(handle)
 
 
-memory = ReplayBuffer(buffer_limit)
+class PrioritizedReplayBuffer:
+    def __init__(self, buffer_limit, alpha=0.6):
+        self.buffer = deque(maxlen=buffer_limit)
+        self.priorities = deque(maxlen=buffer_limit)
+        self.alpha = alpha  #how much prioritize is used
+
+    def put(self, transition):
+        priority = max(self.priorities) if self.priorities else 1.0
+        priority =  priority ** self.alpha
+        self.buffer.append(transition)
+        self.priorities.append(float(priority))
+
+    def sample(self, n, beta=0.4):
+        # print("self.priorities, ", type(self.priorities))
+        scaled_priorities = np.array(self.priorities, dtype=float).flatten()
+
+        # print("scaled_priorities", type(scaled_priorities), scaled_priorities.shape)
+        sampling_probs = scaled_priorities / sum(scaled_priorities)
+
+        # print("sampling_probs", sampling_probs, type(sampling_probs), sampling_probs.shape)
+        indices = np.random.choice(range(len(self.buffer)), size=n, p=sampling_probs)
+
+        # print("indices", indices, type(indices), indices.shape)
+        mini_batch = [self.buffer[idx] for idx in indices]
+        s_lst, a_lst, r_lst, s_prime_lst, done_mask_lst = [], [], [], [], []
+        for transition in mini_batch:
+
+            s, a, r, s_prime, done_mask = transition
+
+            s_lst.append(s)
+            a_lst.append([a])
+            r_lst.append([r])
+            s_prime_lst.append(s_prime)
+            done_mask_lst.append([done_mask])
+
+        # Convert lists to numpy arrays
+        s_lst = torch.stack(s_lst)
+        a_lst = np.array(a_lst)
+        r_lst = np.array(r_lst)
+        s_prime_lst = torch.stack(s_prime_lst)
+        done_mask_lst = np.array(done_mask_lst)
+
+        # print("sampling_probs[indices]" , sampling_probs[indices])
+        # print("len(self.buffer) * sampling_probs[indices]", len(self.buffer) * sampling_probs[indices])
+        # print("beta", beta)
+        #importance sampling weights - important for using in replay buffer - https://datascience.stackexchange.com/questions/32873/prioritized-replay-what-does-importance-sampling-really-do
+        weights = (len(self.buffer) * sampling_probs[indices]) ** (-beta)
+        weights /= weights.max()
+
+        return (
+            torch.tensor(s_lst, device=device, dtype=torch.float),
+            torch.tensor(a_lst, device=device,dtype=torch.int64),
+            torch.tensor(r_lst, device=device),
+            torch.tensor(s_prime_lst, device=device, dtype=torch.float),
+            torch.tensor(done_mask_lst, device=device),
+            indices,
+            torch.tensor(weights,  device=device, dtype=torch.float)
+        )
+
+
+    def update_priorities(self, indices, errors):
+        for idx, error in zip(indices, errors):
+            priority = (abs(error) + 1e-5) ** self.alpha
+            self.priorities[idx] = priority
+
+    def size(self):
+        return len(self.buffer)
+
+    def save(self, save_path):
+        """Save in .pkl file"""
+        with open(save_path, "wb") as handle:
+            pickle.dump(self.buffer, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    def load(self, file_path):
+        """Load a .pkl file"""
+        with open(file_path, "rb") as handle:
+            self.buffer = pickle.load(handle)
+
+class EfficientReplayBuffer: #https://github.com/labmlai/annotated_deep_learning_paper_implementations/blob/master/labml_nn/rl/dqn/replay_buffer.py
+
+    def __init__(self, capacity, alpha=0.6, sequence_length=20):
+        """
+        ### Initialize
+        """
+        # We use a power of $2$ for capacity because it simplifies the code and debugging
+        self.capacity = capacity
+        # $\alpha$
+        self.alpha = alpha
+
+        # Maintain segment binary trees to take sum and find minimum over a range
+        self.priority_sum = [0 for _ in range(2 * self.capacity)]
+        self.priority_min = [float('inf') for _ in range(2 * self.capacity)]
+
+        # Current max priority, $p$, to be assigned to new transitions
+        self.max_priority = 1.
+
+        # Arrays for buffer
+        self.data = {
+            'obs': np.zeros(shape=(capacity, sequence_length, 6), dtype=np.uint8),
+            'action': np.zeros(shape=capacity, dtype=np.int32),
+            'reward': np.zeros(shape=capacity, dtype=np.float32),
+            'next_obs': np.zeros(shape=(capacity, sequence_length, 6), dtype=np.uint8),
+            'done': np.zeros(shape=capacity, dtype=np.bool)
+        }
+        # We use cyclic buffers to store data, and `next_idx` keeps the index of the next empty
+        # slot
+        self.next_idx = 0
+
+        # Size of the buffer
+        self.buffer_size = 0
+
+    def put(self, transition):
+        obs, action, reward, next_obs, done = transition
+        """
+        ### Add sample to queue
+        """
+
+        # Get next available slot
+        idx = self.next_idx
+
+        # store in the queue
+        self.data['obs'][idx] = obs
+        self.data['action'][idx] = action
+        self.data['reward'][idx] = reward
+        self.data['next_obs'][idx] = next_obs
+        self.data['done'][idx] = done
+
+        # Increment next available slot
+        self.next_idx = (idx + 1) % self.capacity
+        # Calculate the size
+        self.buffer_size = min(self.capacity, self.buffer_size + 1)
+
+        # $p_i^\alpha$, new samples get `max_priority`
+        priority_alpha = self.max_priority ** self.alpha
+        # Update the two segment trees for sum and minimum
+        self._set_priority_min(idx, priority_alpha)
+        self._set_priority_sum(idx, priority_alpha)
+
+    def _set_priority_min(self, idx, priority_alpha):
+        """
+        #### Set priority in binary segment tree for minimum
+        """
+
+        # Leaf of the binary tree
+        idx += self.capacity
+        self.priority_min[idx] = priority_alpha
+
+        # Update tree, by traversing along ancestors.
+        # Continue until the root of the tree.
+        while idx >= 2:
+            # Get the index of the parent node
+            idx //= 2
+            # Value of the parent node is the minimum of it's two children
+            self.priority_min[idx] = min(self.priority_min[2 * idx], self.priority_min[2 * idx + 1])
+
+    def _set_priority_sum(self, idx, priority):
+        """
+        #### Set priority in binary segment tree for sum
+        """
+
+        # Leaf of the binary tree
+        idx += self.capacity
+        # Set the priority at the leaf
+        self.priority_sum[idx] = priority
+
+        # Update tree, by traversing along ancestors.
+        # Continue until the root of the tree.
+        while idx >= 2:
+            # Get the index of the parent node
+            idx //= 2
+            # Value of the parent node is the sum of it's two children
+            self.priority_sum[idx] = self.priority_sum[2 * idx] + self.priority_sum[2 * idx + 1]
+
+    def _sum(self):
+        """
+        #### $\sum_k p_k^\alpha$
+        """
+
+        # The root node keeps the sum of all values
+        return self.priority_sum[1]
+
+    def _min(self):
+        """
+        #### $\min_k p_k^\alpha$
+        """
+
+        # The root node keeps the minimum of all values
+        return self.priority_min[1]
+
+    def find_prefix_sum_idx(self, prefix_sum):
+        """
+        #### Find largest $i$ such that $\sum_{k=1}^{i} p_k^\alpha  \le P$
+        """
+
+        # Start from the root
+        idx = 1
+        while idx < self.capacity:
+            # If the sum of the left branch is higher than required sum
+            if self.priority_sum[idx * 2] > prefix_sum:
+                # Go to left branch of the tree
+                idx = 2 * idx
+            else:
+                # Otherwise go to right branch and reduce the sum of left
+                #  branch from required sum
+                prefix_sum -= self.priority_sum[idx * 2]
+                idx = 2 * idx + 1
+
+        # We are at the leaf node. Subtract the capacity by the index in the tree
+        # to get the index of actual value
+        return idx - self.capacity
+
+    def sample(self, batch_size, beta):
+        """
+        ### Sample from buffer
+        """
+
+        # Initialize samples
+        samples = {
+            'weights': np.zeros(shape=batch_size, dtype=np.float32),
+            'indexes': np.zeros(shape=batch_size, dtype=np.int32)
+        }
+
+        # Get sample indexes
+        for i in range(batch_size):
+            p = random.random() * self._sum()
+            idx = self.find_prefix_sum_idx(p)
+            samples['indexes'][i] = idx
+
+        # $\min_i P(i) = \frac{\min_i p_i^\alpha}{\sum_k p_k^\alpha}$
+        prob_min = self._min() / self._sum()
+        # $\max_i w_i = \bigg(\frac{1}{N} \frac{1}{\min_i P(i)}\bigg)^\beta$
+        max_weight = (prob_min * self.buffer_size) ** (-beta)
+
+        for i in range(batch_size):
+            idx = samples['indexes'][i]
+            # $P(i) = \frac{p_i^\alpha}{\sum_k p_k^\alpha}$
+            prob = self.priority_sum[idx + self.capacity] / self._sum()
+            # $w_i = \bigg(\frac{1}{N} \frac{1}{P(i)}\bigg)^\beta$
+            weight = (prob * self.buffer_size) ** (-beta)
+            # Normalize by $\frac{1}{\max_i w_i}$,
+            #  which also cancels off the $\frac{1}{N}$ term
+            samples['weights'][i] = weight / max_weight
+
+        # Get samples data
+        for k, v in self.data.items():
+            samples[k] = v[samples['indexes']]
+
+        return (
+            torch.tensor(samples['obs'], device=device, dtype=torch.float32),
+            torch.tensor(samples['action'], device=device, dtype=torch.int64),
+            torch.tensor(samples['reward'], device=device, dtype=torch.float32),
+            torch.tensor(samples['next_obs'], device=device, dtype=torch.float32),
+            torch.tensor(samples['done'], device=device, dtype=torch.bool),
+            torch.tensor(samples['weights'], device=device, dtype=torch.float32),
+            np.array(samples['indexes'])
+        )
+
+    def update_priorities(self, indexes, priorities):
+        """
+        ### Update priorities
+        """
+        # print("indexes, priorities", indexes.shape, priorities.shape)
+        for idx, priority in zip(indexes, priorities):
+            # Set current max priority
+            self.max_priority = max(self.max_priority, priority)
+
+            # Calculate $p_i^\alpha$
+            priority_alpha = (np.abs(priority) + 1e-5) ** self.alpha
+            # Update the trees
+            self._set_priority_min(int(idx), priority_alpha)
+            self._set_priority_sum(int(idx), priority_alpha)
+
+    def is_full(self):
+        """
+        ### Whether the buffer is full
+        """
+        return self.capacity == self.buffer_size
+
+    def size(self):
+        return self.buffer_size
+
+    def save(self, save_path):
+        """save in .pkl file"""
+        with open(save_path, "wb") as handle:
+            pickle.dump(self.buffer, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    def load(self, file_path):
+        """load a .pkl file"""
+        with open(file_path, "rb") as handle:
+            self.buffer = pickle.load(handle)
+
+
+
+if args.buffer == 'random':
+    memory = ReplayBuffer(buffer_limit)
+else:
+    memory = EfficientReplayBuffer(buffer_limit, sequence_length=len(seq))
 
 # time the experiment
 start_time = time()
@@ -274,7 +581,7 @@ def ExponentialDecay(
     return exploration_rate
 
 
-def train(q, q_target, memory, optimizer, n_episode):
+def train(q, q_target, memory, optimizer, n_episode, num_episodes, agent_choice = 'dqn', buffer='random'):
     """
     core algorithm of Deep Q-learning
 
@@ -282,43 +589,44 @@ def train(q, q_target, memory, optimizer, n_episode):
     run evaluation once and train X times
     """
     for i in range(train_times):
-        # sample from memory, which is not from the most recent runs
-        # but from all previous runs in the memory, so you can be
-        # more sample efficient, because you continuously learn from
-        # past situations
-        # key advantage of Off-policy
-        s, a, r, s_prime, done_mask = memory.sample(batch_size)
-        # the torch size is [batch_size, rows, cols], ie batch_first
-        # print("DQN train --> s.size = ", s.size())
-        # print(s)
-        # print("DQN train --> r.size = ", r.size())
-        # print(r)
+        if buffer == 'random':
+            s, a, r, s_prime, done_mask = memory.sample(batch_size)
 
-        # forward once to q
+        else:
+            beta = get_beta(n_episode, num_episodes)
+            s, a, r, s_prime, done_mask, indices, weights = memory.sample(batch_size, beta)
+            # print("sizes:", s.shape, a.shape, r.shape, s_prime.shape, done_mask.shape)
+            a = a.unsqueeze(1)
+            r = r.unsqueeze(1)
+            done_mask = done_mask.unsqueeze(1)
         q_out = q(s)
         q_a = q_out.gather(1, a)
-        # forward another time for q_target
-        max_q_prime = q_target(s_prime).max(1)[0].unsqueeze(1)
-        # calculate the target value
-        # if environment is done, there is no future reward,
-        # mask the final step reward with done_mask (0.0 if done else 1.0)
+
+        if agent_choice == "ddqn":
+            max_action = q(s_prime).max(1)[1].unsqueeze(1)
+            # Get Q-value for best action
+            max_q_prime = q_target(s_prime).gather(1, max_action)
+        else:
+            max_q_prime = q_target(s_prime).max(1)[0].unsqueeze(1)
+
         target = r + gamma * max_q_prime * done_mask
-        # L1 loss but smoothed out a bit
         loss = F.smooth_l1_loss(q_a, target)
-        # we will try to improve on Q(s,a)
-        # how well our Q-function is at guessing the future long-term rewards
-        # Q_targ() is the target Q network, a 2nd NN to stablize training
-        # Q(s,a) = R(s,a) + γ*Q_targ(s_prime)*done_mask
+
+        if buffer != 'random':
+            errors = (target - q_a).detach().cpu().numpy()  # TD error
+            memory.update_priorities(indices, errors)
+            loss = (loss * torch.tensor(weights, device=device, dtype=torch.float)).mean()
+
+
         optimizer.zero_grad()
         loss.backward()
-        # clip the policy_net.parameters()
-        # Dec05 2021 found it did not work...
-        # for param in q.parameters():
-        #     param.grad.data.clamp_(-1, 1)
+
         optimizer.step()
         if i == 0:
             # Log loss onto Tensorboard
             writer.add_scalar("Q-Network Loss", loss, n_episode)
+            writer.add_scalar("Q Mean Values/Q_Network", q(s).mean().item(), n_episode)
+            writer.add_scalar("Q Mean Values/Q_Target_Network", q_target(s).mean().item(), n_episode)
 
 
 for n_episode in tqdm(range(num_episodes)):
@@ -370,6 +678,7 @@ for n_episode in tqdm(range(num_episodes)):
         # NOTE: done_mask is for when you get the end of a run,
         # then is no future reward, so we mask it with done_mask
         done_mask = 0.0 if done else 1.0
+
         memory.put((s, a, r, s_prime, done_mask))
         s = s_prime
 
@@ -384,9 +693,9 @@ for n_episode in tqdm(range(num_episodes)):
 
     # eventually if memory is big enough, we start running the training loop
     # start training after 2000 (for eg) can get a wider distribution
-    # print("memory.size() = ", memory.size())
+    # print("memory.size() = ", memory.size(), mem_start_train)
     if memory.size() > mem_start_train:
-        train(q, q_target, memory, optimizer, n_episode)
+        train(q, q_target, memory, optimizer, n_episode,num_episodes, agent_choice,buffer)
 
     # Update the target network, copying all weights and biases in DQN
     if n_episode % TARGET_UPDATE == 0:
@@ -424,7 +733,7 @@ print("Complete")
 # for time records
 end_time = time()
 elapsed = end_time - start_time
-print(elapsed)
+print("Training time: ", elapsed)
 
 # Save the rewards_all_episodes with numpy save
 with open(f"{save_path}{config_str}-rewards_all_episodes.npy", "wb") as f:
