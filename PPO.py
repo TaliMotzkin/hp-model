@@ -2,7 +2,7 @@
 from torch.distributions import Categorical
 from models import *
 
-################################## PPO Policy ##################################
+################################### PPO Policy ##################################
 class RolloutBuffer:
     def __init__(self):
         self.actions = []
