@@ -9,6 +9,8 @@ def parse_args():
     parser.add_argument("--seq", type=str, default='HHHPPHPHPHPPHPHPHPPH')
     parser.add_argument("--agent_choice", type=str, default='dqn')
     parser.add_argument("--buffer", type=str, default='random')
+    parser.add_argument("--update_timestep", type=int, default=100)
+    parser.add_argument("--K_epochs", type=int, default=10)
 
     args = parser.parse_args()
     return args
