@@ -38,16 +38,6 @@ class ActorCritic(nn.Module):
 
             self.critic = RNN_LSTM_onlyLastHidden(state_dim, self.hidden_size, self.num_layers, 1, device).to(device)
 
-        if netwotk_type =="AutoMaskLSTM":
-            self.hidden_size = 256
-            self.num_layers = 2
-            self.actor = nn.Sequential(
-                AutoMaskLSTM(state_dim, self.hidden_size, self.num_layers, action_dim, device).to(device),
-                nn.Softmax(dim=-1)
-            )
-
-            self.critic = RNN_LSTM_onlyLastHidden(state_dim, self.hidden_size, self.num_layers, 1, device).to(device)
-
         if netwotk_type == "MambaModel":
             self.hidden_size = 64
             self.num_layers = 2
@@ -181,83 +171,83 @@ class PPO:
 
         # print("sizes ", old_states.shape, old_actions.shape, old_logprobs.shape, old_state_values.shape)
         # calculate advantages - how much better (or worse) the taken action was compared to the baseline provided by the critic
-        # advantages = rewards.detach() - old_state_values.squeeze(dim=1).detach()
+        advantages = rewards.detach() - old_state_values.squeeze(dim=1).detach()
         # print("Rewards:", rewards[80:])
         # print("Critic Values:", old_state_values.squeeze(dim=1)[80:])
         # print("prev adv", advantages[80:])
-        advantages = self.calculate_gae(rewards, old_state_values.squeeze(dim = 1).detach(), self.buffer.is_terminals)
+        # advantages = self.calculate_gae(rewards, old_state_values.squeeze(dim = 1).detach(), self.buffer.is_terminals)
         # print("new adv", advantages[80:])
 
         # print("rewards shape", rewards.shape)
         # print("advantages ", advantages.shape)
 
-        step = old_states.size(0)
-        inds = np.arange(step)
-        minibatch_size = step // self.num_minibatches
+        # step = old_states.size(0)
+        # inds = np.arange(step)
+        # minibatch_size = step // self.num_minibatches 
 
-        for i in range(self.K_epochs):
-            np.random.shuffle(inds)
-            for start in range(0, step, minibatch_size):
-                end = start + minibatch_size
-                idx = inds[start:end]
-
-                mini_states = old_states[idx].to(self.device)
-                mini_actions = old_actions[idx].to(self.device)
-                mini_logprobs = old_logprobs[idx].to(self.device)
-                mini_advantages = advantages[idx].to(self.device)
-                mini_rewards = rewards[idx].to(self.device)
-                # print("batch size", mini_rewards.shape)
-
-                logprobs, state_values, dist_entropy = self.policy.evaluate(mini_states, mini_actions)
-                state_values = torch.squeeze(state_values, dim=1)
-                # Compute Losses
-                ratios = torch.exp(logprobs - mini_logprobs.detach())
-                # print("ratios", ratios.shape, "mini_advantages", mini_advantages.shape)
-                surr1 = ratios * mini_advantages
-                surr2 = torch.clamp(ratios, 1 - self.eps_clip, 1 + self.eps_clip) * mini_advantages
-                policy_loss = -torch.min(surr1, surr2)
-                value_loss = 0.5 * torch.clamp(self.MseLoss(state_values, mini_rewards), -1, 1)
-
-                entropy_loss = -0.01 * dist_entropy
-                loss = policy_loss + value_loss + entropy_loss
-
-                # Gradient Step
-                self.optimizer.zero_grad()
-                loss.mean().backward()
-                torch.nn.utils.clip_grad_norm_(self.policy.parameters(), max_norm=0.5)
-
-                self.optimizer.step()
-
-
-        # # Optimize policy for K epochs
         # for i in range(self.K_epochs):
-        #     # Evaluating old actions and values -for prob ratio
-        #     # print("in k loop old_states, old_actions epoch: ", i, old_states.shape, old_actions.shape)
-        #     logprobs, state_values, dist_entropy = self.policy.evaluate(old_states, old_actions)
-        #
-        #     # match state_values tensor dimensions with rewards tensor
-        #     state_values = torch.squeeze(state_values, dim =1)
-        #
-        #     # Finding the ratio (pi_theta / pi_theta__old) -how much the new policy deviates from the old one for each action taken
-        #     ratios = torch.exp(logprobs - old_logprobs.detach())
-        #
-        #     # Finding Surrogate Loss
-        #     surr1 = ratios * advantages
-        #     surr2 = torch.clamp(ratios, 1 - self.eps_clip, 1 + self.eps_clip) * advantages
-        #
-        #     # final loss of clipped objective PPO
-        #     policy_loss = -torch.min(surr1, surr2) #It improves the policy by increasing the likelihood of actions with positive advantages
-        #     value_loss = 0.5 * self.MseLoss(state_values, rewards) #t trains the critic to accurately predict the returns
-        #     entropy_loss = -0.01 * dist_entropy
-        #
-        #     loss = policy_loss + value_loss + entropy_loss
-        #
-        #     # take gradient step
-        #     self.optimizer.zero_grad()
-        #     loss.mean().backward()
-        #     torch.nn.utils.clip_grad_norm_(self.policy.parameters(), max_norm=0.5)
-        #
-        #     self.optimizer.step()
+        #     np.random.shuffle(inds)
+        #     for start in range(0, step, minibatch_size):
+        #         end = start + minibatch_size
+        #         idx = inds[start:end]
+
+        #         mini_states = old_states[idx].to(self.device)
+        #         mini_actions = old_actions[idx].to(self.device)
+        #         mini_logprobs = old_logprobs[idx].to(self.device)
+        #         mini_advantages = advantages[idx].to(self.device)
+        #         mini_rewards = rewards[idx].to(self.device)
+        #         # print("batch size", mini_rewards.shape)
+
+        #         logprobs, state_values, dist_entropy = self.policy.evaluate(mini_states, mini_actions)
+        #         state_values = torch.squeeze(state_values, dim=1)
+        #         # Compute Losses
+        #         ratios = torch.exp(logprobs - mini_logprobs.detach())
+        #         # print("ratios", ratios.shape, "mini_advantages", mini_advantages.shape)
+        #         surr1 = ratios * mini_advantages
+        #         surr2 = torch.clamp(ratios, 1 - self.eps_clip, 1 + self.eps_clip) * mini_advantages
+        #         policy_loss = -torch.min(surr1, surr2)
+        #         value_loss = 0.5 * self.MseLoss(state_values, mini_rewards)
+
+        #         entropy_loss = -0.01 * dist_entropy
+        #         loss = policy_loss + value_loss + entropy_loss
+
+        #         # Gradient Step
+        #         self.optimizer.zero_grad()
+        #         loss.mean().backward()
+        #         torch.nn.utils.clip_grad_norm_(self.policy.parameters(), max_norm=0.5)
+
+        #         self.optimizer.step()
+
+
+        # Optimize policy for K epochs
+        for i in range(self.K_epochs):
+            # Evaluating old actions and values -for prob ratio
+            # print("in k loop old_states, old_actions epoch: ", i, old_states.shape, old_actions.shape)
+            logprobs, state_values, dist_entropy = self.policy.evaluate(old_states, old_actions)
+        
+            # match state_values tensor dimensions with rewards tensor
+            state_values = torch.squeeze(state_values, dim =1)
+        
+            # Finding the ratio (pi_theta / pi_theta__old) -how much the new policy deviates from the old one for each action taken
+            ratios = torch.exp(logprobs - old_logprobs.detach())
+        
+            # Finding Surrogate Loss
+            surr1 = ratios * advantages
+            surr2 = torch.clamp(ratios, 1 - self.eps_clip, 1 + self.eps_clip) * advantages
+        
+            # final loss of clipped objective PPO
+            policy_loss = -torch.min(surr1, surr2) #It improves the policy by increasing the likelihood of actions with positive advantages
+            value_loss = 0.5 * self.MseLoss(state_values, rewards) #t trains the critic to accurately predict the returns
+            entropy_loss = -0.04 * dist_entropy
+        
+            loss = policy_loss + value_loss + entropy_loss
+        
+            # take gradient step
+            self.optimizer.zero_grad()
+            loss.mean().backward()
+            torch.nn.utils.clip_grad_norm_(self.policy.parameters(), max_norm=0.5)
+        
+            self.optimizer.step()
 
         # Copy new weights into old policy
         self.policy_old.load_state_dict(self.policy.state_dict())

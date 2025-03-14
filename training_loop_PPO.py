@@ -71,7 +71,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # hyperparameters
 gamma = 0.98  # discount rate
 lr_actor = 0.0005
-lr_critic = 0.0001
+lr_critic = 0.001
 
 
 print("##### Summary of Hyperparameters #####")
