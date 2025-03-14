@@ -20,9 +20,14 @@ from envs import Action
 from models import *
 from config import *
 from PPO import PPO
+import pandas as pd
+
 
 args = parse_args()
-seq = args.seq
+directory_data = args.seq_list
+df = pd.read_pickle(directory_data)
+seq_list = list(zip(df["HP Sequence"], df["Best Known Energy"]))
+
 seed = args.seed
 algo = args.network_choice
 network_choice = args.network_choice
@@ -31,9 +36,11 @@ agent_choice = args.agent_choice
 buffer = args.buffer
 update_timestep = args.update_timestep
 K_epochs = args.K_epochs               # update policy for K epochs in one PPO update
+use_curriculum = args.use_curriculum  # Set to False for purely random learning
+revisit_probability = args.revisit_probability  # Probability of revisiting an earlier sequence in curriculum mode
 
 base_dir = f"./{datetime.datetime.now().strftime('%m%d-%H%M')}-"
-config_str = f"{seq[:6]}-{algo}-{agent_choice}-{seed}-{num_episodes}-not_fixing_action"
+config_str = f"{algo}-{agent_choice}-{seed}-{num_episodes}-not_fixing_action"
 save_path = base_dir + config_str + "/"
 writer = SummaryWriter(f"logs/{save_path}")
 
@@ -55,13 +62,12 @@ from functools import partial
 
 print = partial(print, flush=True)
 
-print("seq = ", seq)
+print("seq_list = ", seq_list)
 print("seed = ", seed)
 print("algo = ", algo)
 print("save_path = ", save_path)
 print("num_episodes = ", num_episodes)
 
-max_steps_per_episode = len(seq)
 
 
 
@@ -115,9 +121,13 @@ def one_hot_state(observation_actions, observation_sequence):
     one_hot_input = torch.cat([one_hot_actions, one_hot_sequence], dim=-1).float()
     return one_hot_input
 
+current_seq_idx = 0  #start from the easiest seq
+progress_threshold = 0.5  #move to next sequence when reward reaches 80% of optimal
+moving_avg_window = 5  #wondpw size for checking progression
+recent_rewards = deque(maxlen=moving_avg_window)  # Track last rewards
 
 # NOTE: partial_reward Sep15 changed to delta of curr-prev rewards
-env = gym.make("HPEnv_v0", seq=seq)
+env = gym.make("HPEnvGeneral", seq=seq_list[0][0], maximal=seq_list[0][1])
 
 torch.manual_seed(seed)
 random.seed(seed)
@@ -138,7 +148,6 @@ n_actions = env.action_space.n
 print("n_actions = ", n_actions)
 
 row_width = action_depth + hp_depth
-col_length = len(seq)
 
 
 state_dim = row_width
@@ -153,8 +162,22 @@ start_time = time()
 
 for n_episode in tqdm(range(num_episodes)):
 
+    if use_curriculum:
+        if np.random.rand() < revisit_probability and current_seq_idx > 0:
+            sampled_idx = np.random.randint(0, current_seq_idx + 1)
+        else:
+            sampled_idx = current_seq_idx
+    else:
+        # randomly pick any sequence
+        sampled_idx = np.random.randint(0, len(seq_list))
 
-    s = env.reset()
+    # reset the environment
+    # Initialize the environment and state
+    current_seq, opt_reward = seq_list[sampled_idx]
+    s = env.reset(options={"new_seq": current_seq, "maximal": opt_reward})
+    max_steps_per_episode = len(current_seq)
+
+
     s = one_hot_state(s[0][0], s[0][1])
 
     done = False
@@ -175,7 +198,6 @@ for n_episode in tqdm(range(num_episodes)):
         done = terminated or truncated
         done_mask = 1.0 if done else 0.0
 
-        print("done_mask", done_mask)
         # saving reward and is_terminals
         ppo_agent.buffer.rewards.append(r)
         ppo_agent.buffer.is_terminals.append(done_mask)
@@ -190,13 +212,19 @@ for n_episode in tqdm(range(num_episodes)):
         if done:
             break
 
-    print("ppo_agent.buffer.is_terminals", ppo_agent.buffer.is_terminals, len(ppo_agent.buffer.is_terminals))
+    recent_rewards.append(score)
     # update PPO agent
     if n_episode % update_timestep == 0 and n_episode > 0:
         # print("updating")
         ppo_agent.update(n_episode, num_episodes)
 
-
+    # Check if its time to move to the next sequence
+    if use_curriculum and n_episode > moving_avg_window and current_seq_idx < len(seq_list) - 1:
+        avg_reward = np.mean(recent_rewards)
+        if avg_reward >= progress_threshold:
+            print(f"Moving to next sequence {current_seq_idx + 1} (Avg Reward: {avg_reward:.2f})")
+            current_seq_idx += 1
+            recent_rewards.clear()
 
     # Add current episode reward to total rewards list
     rewards_all_episodes[n_episode] = score
