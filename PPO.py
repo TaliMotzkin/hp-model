@@ -27,7 +27,16 @@ class ActorCritic(nn.Module):
     def __init__(self, state_dim, action_dim,netwotk_type, device):
         super(ActorCritic, self).__init__()
 
+        if netwotk_type =="AutoMaskLSTM":
+            self.hidden_size = 256
+            self.num_layers = 2
+            self.actor = nn.Sequential(
+                AutoMaskLSTM(state_dim, self.hidden_size, self.num_layers, action_dim, device).to(device),
+                nn.Softmax(dim=-1)
+            )
 
+            self.critic = AutoMaskLSTM(state_dim, self.hidden_size, self.num_layers, 1, device).to(device)
+                    
         if netwotk_type =="RNN_LSTM_onlyLastHidden":
             self.hidden_size = 256
             self.num_layers = 2
@@ -87,6 +96,7 @@ class PPO:
         self.K_epochs = K_epochs
         self.device = device
         self.buffer = RolloutBuffer()
+        self.max_len = 100 #max sequence length for padding
 
         self.policy = ActorCritic(state_dim, action_dim,netwotk_type, device).to(device)
 
@@ -110,14 +120,30 @@ class PPO:
 
         with torch.no_grad():
             state = torch.FloatTensor(state).to(self.device)
-            action, action_logprob, state_val = self.policy_old.act(state)
+            padded_state = self._pad_state(state, self.max_len)
+            action, action_logprob, state_val = self.policy_old.act(padded_state)
 
-        self.buffer.states.append(state)
+
+        self.buffer.states.append(padded_state)
         self.buffer.actions.append(action)
         self.buffer.logprobs.append(action_logprob)
         self.buffer.state_values.append(state_val)
 
         return action.item()
+
+    def _pad_state(self, state, max_len, pad_value=-1):
+
+        batch_size, seq_len, feature_dim = state.shape
+
+        if seq_len < max_len:
+            padding = torch.full((batch_size, max_len - seq_len, feature_dim), pad_value, dtype=state.dtype,
+                                 device=state.device)
+            padded_state = torch.cat((state, padding), dim=1) 
+        else:
+            padded_state = state
+
+        return padded_state
+        
 
     def calculate_gae(self, rewards, values, dones):
         advantages = []
