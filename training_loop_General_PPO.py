@@ -1,5 +1,4 @@
 
-
 import datetime
 import os  # for creating directories
 import pickle
@@ -27,7 +26,10 @@ args = parse_args()
 directory_data = args.seq_list
 df = pd.read_pickle(directory_data)
 seq_list = list(zip(df["HP Sequence"], df["Best Known Energy"]))
+seq_lengths = list(df["Length"])[args.start_learning: args.stop_learning]
 
+seq_list = seq_list[args.start_learning: args.stop_learning]
+max_seq_length = len(seq_list[-1][0])
 seed = args.seed
 algo = args.network_choice
 network_choice = args.network_choice
@@ -39,34 +41,6 @@ K_epochs = args.K_epochs               # update policy for K epochs in one PPO u
 use_curriculum = args.use_curriculum  # Set to False for purely random learning
 revisit_probability = args.revisit_probability  # Probability of revisiting an earlier sequence in curriculum mode
 
-base_dir = f"./{datetime.datetime.now().strftime('%m%d-%H%M')}-"
-config_str = f"{algo}-{agent_choice}-{seed}-{num_episodes}-not_fixing_action"
-save_path = base_dir + config_str + "/"
-writer = SummaryWriter(f"logs/{save_path}")
-
-# whether to show or save the matplotlib plots
-display_mode = "save"  # save for CMD, show for ipynb
-if display_mode == "save":
-    save_fig = True
-else:
-    save_fig = False
-
-# create the folder according to the save_path
-if not os.path.exists(save_path):
-    os.makedirs(save_path)
-
-
-
-# apply flush=True to every print function call in the module with a partial function
-from functools import partial
-
-print = partial(print, flush=True)
-
-print("seq_list = ", seq_list)
-print("seed = ", seed)
-print("algo = ", algo)
-print("save_path = ", save_path)
-print("num_episodes = ", num_episodes)
 
 
 
@@ -121,10 +95,10 @@ def one_hot_state(observation_actions, observation_sequence):
     one_hot_input = torch.cat([one_hot_actions, one_hot_sequence], dim=-1).float()
     return one_hot_input
 
-current_seq_idx = 0  #start from the easiest seq
-progress_threshold = 0.5  #move to next sequence when reward reaches 80% of optimal
-moving_avg_window = 5  #wondpw size for checking progression
-recent_rewards = deque(maxlen=moving_avg_window)  # Track last rewards
+current_seq_idx = 0  # start from the easiest seq
+progress_threshold = args.progress_threshold  # move to next sequence when reward reaches 80% of optimal
+# moving_avg_window = 100  # wondpw size for checking progression
+# recent_rewards = deque(maxlen=moving_avg_window)  # Track last rewards
 
 # NOTE: partial_reward Sep15 changed to delta of curr-prev rewards
 env = gym.make("HPEnvGeneral", seq=seq_list[0][0], maximal=seq_list[0][1])
@@ -154,12 +128,52 @@ state_dim = row_width
 eps_clip = 0.2
 
 
-ppo_agent = PPO(state_dim, n_actions, lr_actor, lr_critic, gamma, K_epochs, eps_clip, device, algo, writer)
+base_dir = f"./{datetime.datetime.now().strftime('%m%d-%H%M')}-"
+pre_trained_dir = args.pre_trained_model
+
+if args.pre_trained:
+    base_dir_pre = os.path.basename(os.path.dirname(pre_trained_dir))
+    timestamp = "-".join(base_dir_pre.split("-")[:2])
+    config_str = f"{algo}-{agent_choice}-{seed}-{num_episodes}-not_fixing_action-{args.start_learning}-{args.stop_learning}-{use_curriculum}-Pre_trained_on-{timestamp}"
+else:
+    config_str = f"{algo}-{agent_choice}-{seed}-{num_episodes}-not_fixing_action-{args.start_learning}-{args.stop_learning}-{use_curriculum}"
+
+save_path = base_dir + config_str + "/"
+writer = SummaryWriter(f"logs/{save_path}")
+
+ppo_agent = PPO(state_dim, n_actions, lr_actor, lr_critic, gamma, K_epochs, eps_clip, device, algo, writer, max_seq_length)
+if args.pre_trained:
+    ppo_agent.policy.load_state_dict(torch.load(pre_trained_dir))
+    ppo_agent.policy_old.load_state_dict(torch.load(pre_trained_dir))
+
+
+# whether to show or save the matplotlib plots
+display_mode = "save"  # save for CMD, show for ipynb
+if display_mode == "save":
+    save_fig = True
+else:
+    save_fig = False
+
+# create the folder according to the save_path
+if not os.path.exists(save_path):
+    os.makedirs(save_path)
+
+
+# apply flush=True to every print function call in the module with a partial function
+from functools import partial
+
+print = partial(print, flush=True)
+
+print("seq_list = ", seq_list)
+print("seed = ", seed)
+print("algo = ", algo)
+print("save_path = ", save_path)
+print("num_episodes = ", num_episodes)
 
 # time the experiment
 start_time = time()
 
-
+rewards_per_sequence_length = {}
 for n_episode in tqdm(range(num_episodes)):
 
     if use_curriculum:
@@ -176,7 +190,6 @@ for n_episode in tqdm(range(num_episodes)):
     current_seq, opt_reward = seq_list[sampled_idx]
     s = env.reset(options={"new_seq": current_seq, "maximal": opt_reward})
     max_steps_per_episode = len(current_seq)
-
 
     s = one_hot_state(s[0][0], s[0][1])
 
@@ -212,24 +225,55 @@ for n_episode in tqdm(range(num_episodes)):
         if done:
             break
 
-    recent_rewards.append(score)
+    # recent_rewards.append(score)
     # update PPO agent
     if n_episode % update_timestep == 0 and n_episode > 0:
         # print("updating")
         ppo_agent.update(n_episode, num_episodes)
 
     # Check if its time to move to the next sequence
-    if use_curriculum and n_episode > moving_avg_window and current_seq_idx < len(seq_list) - 1:
-        avg_reward = np.mean(recent_rewards)
-        if avg_reward >= progress_threshold:
-            print(f"Moving to next sequence {current_seq_idx + 1} (Avg Reward: {avg_reward:.2f})")
-            current_seq_idx += 1
-            recent_rewards.clear()
+    if use_curriculum and n_episode > 200 and current_seq_idx < len(seq_list) - 1:
 
-    # Add current episode reward to total rewards list
+        key = (current_seq[:6], max_steps_per_episode)
+        # print("key", key)
+        # if key in rewards_per_sequence_length:
+        #     print("len,", len(rewards_per_sequence_length[key]))
+        if key in rewards_per_sequence_length and len(rewards_per_sequence_length[key]) == 200 and current_seq_idx == sampled_idx:
+
+            avg_reward = np.mean(rewards_per_sequence_length[key]) / seq_list[sampled_idx][1]  # Normalize by max reward
+
+            writer.add_scalar("Curriculum Learning: Normalized Average Reward (Episode)", avg_reward, n_episode)
+
+            if avg_reward >= progress_threshold:
+                print(f"Moving to next sequence {current_seq_idx + 1} (Avg Normalized Reward: {avg_reward:.2f})")
+                current_seq_idx += 1
+                rewards_per_sequence_length.clear()
+
+                # Add current episode reward to total rewards list
     rewards_all_episodes[n_episode] = score
     # Add episodic reward onto Tensorboard
     writer.add_scalar("Reward (Episode)", score, n_episode)
+    writer.add_scalar("Sequence Length (Episode)", max_steps_per_episode, n_episode)
+
+    # Adding real reward per each sequence
+    for seq in seq_list:
+        if seq[0] == current_seq:
+            reward_value = score * seq[1]
+            writer.add_scalar \
+                (f"Sequence: {current_seq[:6]}, Length: {max_steps_per_episode}, Maximal Reward: {seq[1]} - Reward (Episode)", reward_value, n_episode)
+
+            key = (current_seq[:6], max_steps_per_episode)
+            if key not in rewards_per_sequence_length:
+                rewards_per_sequence_length[key] = []
+
+            rewards_per_sequence_length[key].append(reward_value)
+
+            if len(rewards_per_sequence_length[key]) > 200:
+                rewards_per_sequence_length[key].pop(0)
+            writer.add_scalar \
+                (f"Sequence: {current_seq[:6]}, Length: {max_steps_per_episode}, Maximal Reward: {seq[1]} Reward (Episode) - Reward (Windowed Max)",
+                              np.max(rewards_per_sequence_length[key]), n_episode)
+
     # Add window of max episodic reward over the last 200 episodes onto Tensorboard
     if n_episode > 200:
         writer.add_scalar("Reward (Episode Windowed)", np.max(rewards_all_episodes[n_episode - 200 : n_episode]), n_episode)
