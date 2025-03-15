@@ -36,7 +36,8 @@ class ActorCritic(nn.Module):
             )
 
             self.critic = AutoMaskLSTM(state_dim, self.hidden_size, self.num_layers, 1, device).to(device)
-                    
+
+
         if netwotk_type =="RNN_LSTM_onlyLastHidden":
             self.hidden_size = 256
             self.num_layers = 2
@@ -87,7 +88,7 @@ class ActorCritic(nn.Module):
 
 class PPO:
     def __init__(self, state_dim, action_dim,  lr_actor, lr_critic, gamma, K_epochs, eps_clip,
-                  device, netwotk_type , writer):
+                  device, netwotk_type , writer, max_seq_length=None):
 
 
 
@@ -96,8 +97,7 @@ class PPO:
         self.K_epochs = K_epochs
         self.device = device
         self.buffer = RolloutBuffer()
-        self.max_len = 100 #max sequence length for padding
-
+        self.max_len = max_seq_length #max sequence length for padding
         self.policy = ActorCritic(state_dim, action_dim,netwotk_type, device).to(device)
 
         self.lr_actor = lr_actor
@@ -138,12 +138,11 @@ class PPO:
         if seq_len < max_len:
             padding = torch.full((batch_size, max_len - seq_len, feature_dim), pad_value, dtype=state.dtype,
                                  device=state.device)
-            padded_state = torch.cat((state, padding), dim=1) 
+            padded_state = torch.cat((state, padding), dim=1)
         else:
             padded_state = state
 
         return padded_state
-        
 
     def calculate_gae(self, rewards, values, dones):
         advantages = []
@@ -163,17 +162,17 @@ class PPO:
 
     def update(self, n_episode, total_episodes):
 
-        frac = (n_episode - 1.0) / total_episodes
-        new_lr_actor = self.lr_actor * (1.0 - frac)
-        new_lr_critic = self.lr_critic * (1.0 - frac)
-        new_lr_actor = max(new_lr_actor, 0.00001)
-        new_lr_critic = max(new_lr_critic, 0.00001)
+        if n_episode % 3000 == 0:
+            new_lr_actor = max(self.lr_actor * 0.7, 0.00001)
+            new_lr_critic = max(self.lr_critic * 0.7, 0.00001)
+            self.lr_actor = new_lr_actor
+            self.lr_critic = new_lr_critic
 
-        self.optimizer.param_groups[0]['lr'] = new_lr_actor
-        self.optimizer.param_groups[1]['lr'] = new_lr_critic
+            self.optimizer.param_groups[0]['lr'] = self.lr_actor
+            self.optimizer.param_groups[1]['lr'] = self.lr_critic
 
-        self.writer.add_scalar("Learning Rate/Actor", new_lr_actor, n_episode)
-        self.writer.add_scalar("Learning Rate/Critic", new_lr_critic, n_episode)
+        self.writer.add_scalar("Learning Rate/Actor", self.lr_actor, n_episode)
+        self.writer.add_scalar("Learning Rate/Critic", self.lr_critic, n_episode)
 
         # Monte Carlo estimate of returns
         rewards = []
