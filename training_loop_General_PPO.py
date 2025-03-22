@@ -207,7 +207,7 @@ for n_episode in tqdm(range(num_episodes)):
         a = ppo_agent.select_action(s.float().unsqueeze(0))
         (s_prime, r, terminated, truncated, info) = env.step(a)
 
-        # a = info["actions"][-1]
+        a = info["actions"][-1]
         done = terminated or truncated
         done_mask = 1.0 if done else 0.0
 
