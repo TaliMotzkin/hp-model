@@ -29,8 +29,9 @@ seq_list = list(zip(df["HP Sequence"], df["Best Known Energy"]))
 seq_lengths = list(df["Length"])[args.start_learning: args.stop_learning]
 
 seq_list = seq_list[args.start_learning: args.stop_learning]
-max_seq_length = len(seq_list[-1][0])
+# max_seq_length = len(seq_list[-1][0])
 seed = args.seed
+max_seq_length =100
 algo = args.network_choice
 network_choice = args.network_choice
 num_episodes = args.num_episodes
@@ -99,6 +100,7 @@ current_seq_idx = 0  # start from the easiest seq
 progress_threshold = args.progress_threshold  # move to next sequence when reward reaches 80% of optimal
 # moving_avg_window = 100  # wondpw size for checking progression
 # recent_rewards = deque(maxlen=moving_avg_window)  # Track last rewards
+rewards_normaliztion = []
 
 # NOTE: partial_reward Sep15 changed to delta of curr-prev rewards
 env = gym.make("HPEnvGeneral", seq=seq_list[0][0], maximal=seq_list[0][1])
@@ -212,7 +214,8 @@ for n_episode in tqdm(range(num_episodes)):
         done_mask = 1.0 if done else 0.0
 
         # saving reward and is_terminals
-        ppo_agent.buffer.rewards.append(r)
+        # ppo_agent.buffer.rewards.append(r)
+        rewards_normaliztion.append(r)
         ppo_agent.buffer.is_terminals.append(done_mask)
 
 
@@ -225,11 +228,19 @@ for n_episode in tqdm(range(num_episodes)):
         if done:
             break
 
+
     # recent_rewards.append(score)
+
     # update PPO agent
     if n_episode % update_timestep == 0 and n_episode > 0:
+        rewards_normaliztion = np.array(rewards_normaliztion)
+        reward_mean = np.mean(rewards_normaliztion)
+        reward_std = np.std(rewards_normaliztion)
+        z_scores = ( rewards_normaliztion - reward_mean ) / (reward_std + 0.0000001)
+        ppo_agent.buffer.rewards = z_scores.tolist()
         # print("updating")
         ppo_agent.update(n_episode, num_episodes)
+        rewards_normaliztion = []
 
     # Check if its time to move to the next sequence
     if use_curriculum and n_episode > 200 and current_seq_idx < len(seq_list) - 1:
@@ -318,6 +329,3 @@ with open(f"{save_path}{config_str}-best_folds", "wb") as f:
 
 ppo_agent.save(f"{save_path}{config_str}-state_dict.pth")
 env.close()
-
-
-
