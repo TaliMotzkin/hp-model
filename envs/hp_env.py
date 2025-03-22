@@ -27,9 +27,9 @@ class HPEnv(gym.Env):
             elif character == 'P':
                 observation_sequence.append(1)
         self.observation_sequence = np.array(observation_sequence, dtype=np.int64)
-
+        self.prev_reward = 0
         self.reset()
-
+        
         if len(self.seq) <= 2:
             raise ValueError("len(seq) must be > 2")
 
@@ -129,6 +129,25 @@ class HPEnv(gym.Env):
                     num_contacts += 1
 
         return num_contacts / 2  # Each pair is counted twice
+
+        # num_contacts = 0. perhapse more accurate
+        # if self.terminated:
+        #     normlized_reward = self.prev_reward
+        # else:
+        #     h_positions = {pos for idx, pos in enumerate(self.state) if self.seq[idx] == 'H'}
+
+        #     # Check adjacent H-H interactions
+        #     for x, y in h_positions:
+        #         neighbors = [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]
+        #         for nx, ny in neighbors:
+        #             # Second condition checks if non-sequential
+        #             if (nx, ny) in h_positions and self.state.index((nx, ny)) not in {self.state.index((x, y)) - 1,
+        #                                                                               self.state.index((x, y)) + 1}:
+        #                 num_contacts += 1
+        #     total_reward = num_contacts / 2  # Each pair is counted twice
+        #     normlized_reward = total_reward
+        #     self.prev_reward = normlized_reward
+        # return normlized_reward
 
 
     def observe(self):
